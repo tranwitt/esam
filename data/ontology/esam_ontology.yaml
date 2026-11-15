@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.3"
+  version: "0.4"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -128,11 +128,12 @@ classes:
       description: { type: text, description: "One sentence. Used to match documents and questions to this function." }
       safety_classification: { type: text, pattern: '^(MIL-STD-882E )?SwCI [1-5]$' }
   DesignArtifact:
-    description: "A controlled document attached to a subsystem."
+    description: "A controlled document attached to the thing it describes: a subsystem, or for a system-level document (SSDD) the vehicle or one of its systems."
     id_pattern: '^(ICD|SRS|SDD|SSDD|STD|STP|STR)-[A-Z0-9]+-00[1-9]$'
     attributes:
       type: { type: enum, values: document_types, required: true }
       revision: { type: text, pattern: '^[A-Z]{1,2}$', required: true }
+      # Subsystem unless the document's type says otherwise (document_types.<type>.attaches_to).
       attached_to: { type: ref, class: Subsystem, required: true }
       file: { type: text, required: true }
   # Requirements and test cases are read out of the documents (SRS and STD),
@@ -170,9 +171,9 @@ relationships:
     to: [Vehicle, VehicleFamily, Variant, System, Subsystem]
     meaning: "child is part of parent (the WBS tree)"
   HAS_ARTIFACT:
-    from: [Subsystem]
+    from: [Vehicle, System, Subsystem]
     to: [DesignArtifact]
-    meaning: "subsystem is described by document"
+    meaning: "owner is described by document (which owners a document type may have: document_types.<type>.attaches_to)"
   INTERFACES_WITH:
     from: [Subsystem]
     to: [Subsystem]
@@ -188,6 +189,10 @@ relationships:
 
 # ── Kinds of documents ───────────────────────────────────────────────────────
 # standard:  where the name comes from.
+# attaches_to: the classes a document of this type may be attached to.
+#            Left out = [Subsystem]. The SSDD is the system-level design
+#            (MIL-STD-498 "System/Subsystem"), so it may sit on the whole
+#            vehicle system (V-001), on one system (SYS-…) or on a subsystem.
 # answers:   words in a question that mean this document type would answer it
 #            (replaces the keyword table in esamkit/coverage.py in step 2).
 document_types:
@@ -204,6 +209,7 @@ document_types:
   ssdd:
     name: "System/Subsystem Design Description"
     standard: "MIL-STD-498 / J-STD-016"
+    attaches_to: [Vehicle, System, Subsystem]
     answers: [system design, subsystem design, allocation]
     synonyms: ["system design description"]
   icd:

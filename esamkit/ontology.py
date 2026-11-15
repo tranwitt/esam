@@ -77,6 +77,12 @@ class Ontology:
                     out.setdefault(t, []).append(rule.get("why", ""))
         return {t: out[t] for t in self.document_types if t in out}
 
+    def attach_classes(self, doc_type: str | None) -> list[str]:
+        """The classes a document of this type may be attached to: the type's
+        `attaches_to`, or the class DesignArtifact.attached_to names."""
+        default = self.classes["DesignArtifact"]["attributes"]["attached_to"].get("class", "Subsystem")
+        return list((self.document_types.get(str(doc_type or "").lower()) or {}).get("attaches_to") or [default])
+
     def required_types(self) -> list[str]:
         """Every document type some rule can require, in document_types order."""
         wanted = {t for r in self.rules.get("required_documents", []) for t in r.get("require", [])}
@@ -105,6 +111,14 @@ class Ontology:
                     out.append(Finding("error", f"relationship {rname}", f"unknown class {end!r}"))
             for pname, spec in (r.get("properties") or {}).items():
                 check_attr(f"relationship {rname}.{pname}", spec)
+        owners = self.relationships.get("HAS_ARTIFACT", {}).get("from", [])
+        for tname in self.document_types:
+            for cname in self.attach_classes(tname):
+                if cname not in self.classes:
+                    out.append(Finding("error", f"document type {tname}", f"attaches_to unknown class {cname!r}"))
+                elif cname not in owners:
+                    out.append(Finding("error", f"document type {tname}",
+                                       f"attaches_to {cname}, but HAS_ARTIFACT does not start from {cname}"))
         for i, rule in enumerate(self.rules.get("required_documents", []), 1):
             for t in rule.get("require", []):
                 if t not in self.document_types:
@@ -192,6 +206,23 @@ def _check_node(onto: Ontology, cname: str, node: dict, parent: dict | None, see
     return out
 
 
+def _one_of(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+
+
+def find_node(data: dict, eid: str | None) -> tuple[str, dict] | None:
+    """(class, node) of an id in the baseline's vehicle tree."""
+    def walk(cname, node):
+        if node.get("id") == eid:
+            return cname, node
+        key, child = _CHILDREN.get(cname, (None, None))
+        for c in (node.get(key) or []) if key else []:
+            if found := walk(child, c):
+                return found
+        return None
+    return walk("Vehicle", data.get("vehicle") or {}) if eid else None
+
+
 def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None) -> list[Finding]:
     """Check raw baseline YAML against the ontology. With `documents_dir`,
     also check that every listed document file exists and every file is listed."""
@@ -237,8 +268,10 @@ def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None
                 if spec.get("required"):
                     out.append(Finding("error", aid, f"required attribute {key!r} is missing"))
             elif spec.get("type") == "ref":
-                if seen.get(art[key]) != spec["class"]:
-                    out.append(Finding("error", aid, f"{key} = {art[key]!r} is not a {spec['class']} in the baseline"))
+                # attached_to: the classes this document's type allows (a subsystem; for an SSDD also the vehicle or a system)
+                classes = onto.attach_classes(art.get("type")) if key == "attached_to" else [spec["class"]]
+                if seen.get(art[key]) not in classes:
+                    out.append(Finding("error", aid, f"{key} = {art[key]!r} is not a {_one_of(classes)} in the baseline"))
             else:
                 out += _check_value(onto, aid, key, art[key], spec)
         if art.get("file"):

@@ -39,7 +39,7 @@ from .config import Settings, settings as default_settings
 from .embedders.base import Embedder
 from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
-from .ontology import Ontology, check_baseline
+from .ontology import Ontology, check_baseline, find_node
 from .readers import PICTURES, convert
 from .traceability import load_traceability, read_requirements, read_test_cases
 from .vectorstores.base import VectorStore
@@ -48,6 +48,7 @@ _TITLE = re.compile(r"^#\s+(?P<id>[A-Z]+-[A-Z0-9]+-\d{3})\s*[—–-]\s*(?P<name
 _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
 
 
+_OWNER_COLUMNS = ("subsystem", "system", "vehicle", "attached to", "attached_to")
 ORIGINALS = "originals"       # data/documents/originals/: Word and picture files as they were delivered
 
 
@@ -106,6 +107,9 @@ def conversion_attention(conversion: dict | None) -> list[str]:
 def read_header(text: str) -> dict:
     """The baseline entry the document describes itself as: its title line
     `# <ID> — <name>` and the `| Document | Type | Revision | Subsystem |` table.
+    The last column is what the document is attached to; for a system-level
+    document (an SSDD on V-001 or SYS-…) it may be headed System, Vehicle or
+    Attached to instead.
     Fields it doesn't state are left out (the ontology check reports them)."""
     entry: dict = {}
     lines = text.splitlines()
@@ -119,9 +123,9 @@ def read_header(text: str) -> dict:
             values = [c.strip() for c in lines[i + 2].strip().strip("|").split("|")]
             row = dict(zip(cells, values))
             entry.setdefault("id", row.get("document", ""))
-            for key, col in (("type", "type"), ("revision", "revision"), ("attached_to", "subsystem")):
-                if row.get(col):
-                    entry[key] = row[col].lower() if key == "type" else row[col]
+            for key, cols in (("type", ("type",)), ("revision", ("revision",)), ("attached_to", _OWNER_COLUMNS)):
+                if value := next((row[c] for c in cols if row.get(c)), None):
+                    entry[key] = value.lower() if key == "type" else value
             break
     if entry.get("id"):
         entry.setdefault("type", entry["id"].split("-")[0].lower())   # the ontology ties type to the id prefix
@@ -150,7 +154,8 @@ def ontology_check(onto: Ontology, baseline_yaml: Path, entry: dict) -> dict:
         if (len(new), new) <= (len(old), old):
             findings.append({"level": "error", "where": entry["id"],
                              "message": f"already in the baseline at revision {old}; a replacement needs a later revision, not {new or 'none'}"})
-    subsystem = _subsystem(data, entry.get("attached_to"))
+    owner_class, owner = find_node(data, entry.get("attached_to")) or (None, None)
+    subsystem = owner if owner_class == "Subsystem" else None
     required = {}
     if subsystem is not None:
         has_ifaces = any(entry.get("attached_to") in (i.get("from"), i.get("to")) for i in data.get("interfaces") or [])
@@ -161,20 +166,13 @@ def ontology_check(onto: Ontology, baseline_yaml: Path, entry: dict) -> dict:
             "ok": not any(f["level"] == "error" for f in findings),
             "replaces_revision": current.get("revision") if current else None,
             "document_type": {"code": entry.get("type"), "name": dtype.get("name"), "standard": dtype.get("standard")},
-            "subsystem": {"id": entry.get("attached_to"), "name": (subsystem or {}).get("name"),
+            # what the document is attached to. Kept under "subsystem" for its readers; "class" says what it is
+            # (Subsystem, or Vehicle / System for a system-level document such as an SSDD).
+            "subsystem": {"id": entry.get("attached_to"), "name": (owner or {}).get("name"), "class": owner_class,
                           "safety_critical": bool((subsystem or {}).get("safety_critical"))},
+            "may_attach_to": onto.attach_classes(entry.get("type")),
             "required_by_rules": required.get(entry.get("type", ""), []),
             "subsystem_requires": list(required)}
-
-
-def _subsystem(data: dict, sid: str | None) -> dict | None:
-    for fam in (data.get("vehicle") or {}).get("families", []):
-        for var in fam.get("variants", []):
-            for sysm in var.get("systems", []):
-                for sub in sysm.get("subsystems", []):
-                    if sub.get("id") == sid:
-                        return sub
-    return None
 
 
 # ── A2 ───────────────────────────────────────────────────────────────────────
@@ -357,7 +355,7 @@ def verify_ingestion(entry: dict, review: dict, manifest: dict, emb: Embedder, s
 
     stored = chunk_counts(s.pg_dsn, s.collection).get(aid, 0)
     check("chunks stored", stored == manifest["chunks"] == review["chunks"], review["chunks"], stored)
-    owners = [r["eid"] for r in graph.ancestors(aid) if r["label"] == "Subsystem"]
+    owners = [r["eid"] for r in graph.ancestors(aid) if r["depth"] == 1]     # the first hop up: what it is attached to
     check("document attached in the graph", entry["attached_to"] in owners, entry["attached_to"], owners or "not in graph")
     snap = graph.snapshot()
     derived = {v["eid"] for v in snap["vertices"] if v["props"].get("source_artifact") == aid}

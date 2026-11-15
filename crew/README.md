@@ -123,6 +123,15 @@ What the document must state (SE manual §2.5): a title line `# <ID> — <name>`
 `| Document | Type | Revision | Subsystem |`. Missing fields are ontology findings; the SE can supply them
 with `--set revision=A --set attached_to=SUB-…`.
 
+**System-level documents (SSDD).** Every document type is attached to a subsystem except the SSDD, which the
+ontology lets sit on the vehicle system, one system or a subsystem (`document_types.ssdd.attaches_to:
+[Vehicle, System, Subsystem]` in `data/ontology/esam_ontology.yaml`). The last header column then holds
+`V-001` or `SYS-…` and may be headed System, Vehicle or Attached to. A sample to try:
+`python -m crew.main review lessons/06_missing_document/staged/SSDD-LTV-001.md`. Its chunks carry the
+owner's own WBS code (`1.0` for the vehicle) and the graph gets `V-001 ─HAS_ARTIFACT→ SSDD-LTV-001`.
+To let another type sit higher up, add `attaches_to` to that type; the class must also be in
+`relationships.HAS_ARTIFACT.from`.
+
 **What "ingest" changes**: copies the file into `data/documents/`, appends one line to the baseline's
 `artifacts:` (as text, so the YAML's comments survive), stores the chunks, and reloads the graph with its
 traceability. A later revision replaces the earlier file and line (kept in the run's `replaced/`). Each ingest

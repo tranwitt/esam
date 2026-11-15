@@ -123,6 +123,11 @@ interfaces:
 # Artifacts. `file` is relative to data/documents/; the file stem equals the
 # artifact id, so documents link to graph nodes by EXACT id (the earlier
 # script guessed links from file names).
+# `attached_to` is a subsystem. A system-level document (an SSDD) may instead be
+# attached to the vehicle system or to one system (the ontology's
+# document_types.ssdd.attaches_to), e.g.:
+#   - { id: SSDD-LTV-001, name: "...", type: ssdd, revision: A, attached_to: V-001, file: SSDD-LTV-001.md }
+# (lessons/06_missing_document/staged/SSDD-LTV-001.md is one to ingest through Pipeline A.)
 artifacts:
   - { id: ICD-BRK-001,  name: "Brake ECU J1939 Interface Control Document", type: icd,  revision: A, attached_to: SUB-BRK-ECU, file: ICD-BRK-001.md }
   - { id: SDD-BRK-001, name: "Brake Control ECU Software Design",          type: sdd, revision: A, attached_to: SUB-BRK-ECU, file: SDD-BRK-001.md }

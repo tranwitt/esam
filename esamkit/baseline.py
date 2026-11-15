@@ -11,7 +11,7 @@ testable without any server running (see tests/test_baseline.py).
 Edge direction conventions (same as ESAM_Pilot_Implementation_v1.0.md):
 
     child     ──PART_OF──────────►  parent          (Subsystem -> System)
-    owner     ──HAS_ARTIFACT─────►  DesignArtifact  (Subsystem -> ICD)
+    owner     ──HAS_ARTIFACT─────►  DesignArtifact  (Subsystem -> ICD; Vehicle or System -> SSDD)
     producer  ──INTERFACES_WITH──►  consumer        (Brake ECU -> backbone)
 
 Direction matters. "Walk DOWN the WBS" means following PART_OF edges
@@ -61,14 +61,16 @@ class Baseline:
         index = {}
         for art in self.artifacts:
             owner = art["attached_to"]
-            # The owner may be a Subsystem; its WBS code is its System's code.
-            system = parent_of.get(owner, owner)
+            # A Subsystem has no WBS code of its own: it takes its System's.
+            # A Vehicle or System (the owner of an SSDD) has its own.
+            system = owner if self.vertex(owner).props.get("wbs_code") else parent_of.get(owner, owner)
             index[art["file"]] = {
                 "artifact_id": art["id"],
                 "artifact_type": art["type"],
                 "title": art["name"],
                 "revision": art.get("revision", ""),
-                "subsystem_id": owner,
+                "subsystem_id": owner,                      # the owner: a subsystem, or the vehicle / a system for an SSDD
+                "owner_class": self.vertex(owner).label,
                 "wbs_code": self.vertex(system).props.get("wbs_code", ""),
             }
         return index

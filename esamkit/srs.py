@@ -141,8 +141,9 @@ def check_brief(brief: dict, lib: Library, onto: Ontology, s: Settings = default
 
 
 def _baseline_subsystem(s: Settings, sid: str | None) -> dict | None:
-    from .intake import _subsystem
-    return _subsystem(yaml.safe_load(s.baseline_yaml.read_text()), sid)
+    from .ontology import find_node
+    found = find_node(yaml.safe_load(s.baseline_yaml.read_text()), sid)
+    return found[1] if found and found[0] == "Subsystem" else None
 
 
 # ── The draft ───────────────────────────────────────────────────────────────

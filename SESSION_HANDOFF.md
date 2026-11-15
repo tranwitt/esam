@@ -27,6 +27,10 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   Intake converts once at `receive`, reviews the markdown, keeps the original in `data/documents/originals/`.
 - **Embeddings**: `ESAM_EMBED_MODEL` + `ESAM_EMBED_BASE_URL` (old names still read). Endpoint client is stdlib.
 - **Models**: `esamkit/llm.py` (chat | responses | auto, fallbacks with cooldown); `crew/llm.py` `FailoverLLM`.
+- **SSDD on the vehicle system**: `document_types.ssdd.attaches_to: [Vehicle, System, Subsystem]` (ontology v0.4);
+  `HAS_ARTIFACT` may start from Vehicle or System. Sample: `lessons/06_missing_document/staged/SSDD-LTV-001.md`
+  (attached to V-001; not added to the baseline). Tests: `tests/test_ssdd.py`. The Cockpit Dashboard matrix is still
+  per subsystem, so a vehicle-level SSDD shows on the Graph tab only.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):
   1. `tests/test_crew_llm.py` and a real crew run with fallbacks: run `pytest -q tests/test_crew_llm.py`
      and `python -m crew.main env` in the crew venv first.
