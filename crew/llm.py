@@ -8,13 +8,20 @@ fallbacks (config/environments/<name>.yaml; the rules are in esamkit/llm.py):
       roles:
         reasoning:
           model: gpt-5.1
-          base_url_env: ESAM_GATEWAY_URL
-          api_key_env: ESAM_GATEWAY_KEY
-          api: chat                      # chat | responses | auto
-          fallbacks:
-            - api: responses             # same endpoint and model, the Responses API
-            - base_url_env: ESAM_GATEWAY_B_URL      # another endpoint
-              api_key_env: ESAM_GATEWAY_B_KEY
+          model_env: ESAM_REASONING_MODEL            # a variable in .env that, when set, replaces the line above
+          base_url_env: ESAM_REASONING_BASE_URL
+          api_key_env: ESAM_REASONING_API_KEY
+          api: chat                                  # chat | responses | auto
+          api_env: ESAM_REASONING_API
+          fallbacks_env: ESAM_REASONING_FALLBACK     # ESAM_REASONING_FALLBACK_1_API=responses, _2_BASE_URL=... in .env
+        coding:                                      # a separate endpoint: nothing is shared with reasoning
+          model: nemotron-4-15b
+          base_url_env: ESAM_CODING_BASE_URL
+          api_key_env: ESAM_CODING_API_KEY
+          fallbacks_env: ESAM_CODING_FALLBACK
+
+A profile may also list fallbacks itself (`fallbacks: [{api: responses},
+{base_url_env: MY_SECOND_URL, api_key_env: MY_SECOND_KEY}]`); both are used.
 
 With ONE route the crew gets a plain CrewAI `LLM`, exactly as before
 (`api: responses` just selects CrewAI's Responses API support). With more

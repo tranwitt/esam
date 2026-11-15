@@ -123,5 +123,5 @@ deactivate                         # leave the Python venv
 | `connection refused` from a lesson script | The database isn't running; do step 2 |
 | `No model found in .../models/...` | The model folder is missing; re-run `python lessons/00_setup/stage_model.py` (needs internet, ~440 MB) |
 | `python: command not found` / import errors | You skipped `source .venv/bin/activate` (step 1) |
-| Lesson 05 prints a prompt instead of an answer | `esam/.env` is missing the `ESAM_CHAT_*` settings; see `SESSION_HANDOFF.md` §2 |
+| Lesson 05 prints a prompt instead of an answer | `esam/.env` is missing the `ESAM_REASONING_*` settings; see `SESSION_HANDOFF.md` §2 |
 | You want a completely fresh database | `docker compose down -v && docker compose up -d --wait`, then re-run the ingest/load steps in 03 and 04 |

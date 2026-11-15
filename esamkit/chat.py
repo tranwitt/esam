@@ -3,16 +3,16 @@ Chat model client: any OpenAI-compatible endpoint, over the Chat Completions
 API or the Responses API, with fallback endpoints.
 
 On the pilot this is the IL5 API Gateway (GPT-5.1). Configure:
-    ESAM_CHAT_BASE_URL=https://<gateway>/v1
-    ESAM_CHAT_API_KEY=...
-    ESAM_CHAT_MODEL=<the model name the gateway exposes>
+    ESAM_REASONING_BASE_URL=https://<gateway>/v1
+    ESAM_REASONING_API_KEY=...
+    ESAM_REASONING_MODEL=<the model name the gateway exposes>
 
 Optional:
-    ESAM_CHAT_API=chat | responses | auto      # auto = chat, then responses if chat fails
-    ESAM_CHAT_FALLBACK_1_BASE_URL=https://<second endpoint>/v1
-    ESAM_CHAT_FALLBACK_1_API_KEY=...           # each field defaults to the primary's
-    ESAM_CHAT_FALLBACK_1_MODEL=...
-    ESAM_CHAT_FALLBACK_1_API=responses
+    ESAM_REASONING_API=chat | responses | auto      # auto = chat, then responses if chat fails
+    ESAM_REASONING_FALLBACK_1_BASE_URL=https://<second endpoint>/v1
+    ESAM_REASONING_FALLBACK_1_API_KEY=...           # each field defaults to the primary's
+    ESAM_REASONING_FALLBACK_1_MODEL=...
+    ESAM_REASONING_FALLBACK_1_API=responses
 
 The routing and failover rules are in esamkit/llm.py.
 

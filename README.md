@@ -191,17 +191,20 @@ What a Word document must contain to be recognised is the same as for markdown: 
 
 ## Model endpoints: Responses API and fallbacks
 
-The chat model (`esamkit/llm.py`) speaks Chat Completions (`ESAM_CHAT_API=chat`, default), the Responses
+The chat model (`esamkit/llm.py`) speaks Chat Completions (`ESAM_REASONING_API=chat`, default), the Responses
 API (`responses`), or tries chat and then responses on the same endpoint (`auto`). Fallback endpoints are
 tried in order when a call fails in a way another endpoint could fix (unreachable, 404/405, 408/429, 5xx,
 rejected key); each inherits what it leaves unset:
 
 ```bash
-ESAM_CHAT_FALLBACK_1_API=responses                          # same endpoint, the Responses API
-ESAM_CHAT_FALLBACK_2_BASE_URL=https://second-gateway/v1     # another endpoint
+ESAM_REASONING_FALLBACK_1_API=responses                          # same endpoint, the Responses API
+ESAM_REASONING_FALLBACK_2_BASE_URL=https://second-gateway/v1     # another endpoint
 ```
 
-The crew has the same per role in its profile (`crew/README.md`, "Model endpoints").
+The coding model is separate, with its own endpoint: `ESAM_CODING_BASE_URL`, `ESAM_CODING_API_KEY`,
+`ESAM_CODING_MODEL`, `ESAM_CODING_API` and `ESAM_CODING_FALLBACK_<n>_*`. The crew's profiles
+(`config/environments/*.yaml`) name these same variables, so `.env` is the one place to set them
+(`crew/README.md`, "Model endpoints"). `ESAM_CHAT_*`, the older name of `ESAM_REASONING_*`, is still read.
 
 To add a backend, implement the interface and add one branch to `factory.py`. For a different
 vector database, that's the five methods of `VectorStore`; for JanusGraph, the methods of

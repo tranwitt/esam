@@ -47,6 +47,30 @@ def _first(*names: str, default: str = "") -> str:
     return default
 
 
+# Older names of variables, still read when the current name is not set.
+#   ESAM_CHAT_*              -> ESAM_REASONING_*   (the reasoning model; ESAM_CHAT_* was its first name)
+#   ESAM_GATEWAY_URL / _KEY  -> the reasoning AND the coding endpoint (they used to share one gateway setting)
+_OLD_PREFIXES = (("ESAM_REASONING_", "ESAM_CHAT_"),)
+_OLD_NAMES = {"ESAM_REASONING_BASE_URL": ("ESAM_GATEWAY_URL",), "ESAM_REASONING_API_KEY": ("ESAM_GATEWAY_KEY",),
+              "ESAM_CODING_BASE_URL": ("ESAM_GATEWAY_URL",), "ESAM_CODING_API_KEY": ("ESAM_GATEWAY_KEY",)}
+
+
+def env_names(name: str) -> list[str]:
+    """The variable and the older names it is also read from, in order."""
+    names = [name] + [old + name[len(new):] for new, old in _OLD_PREFIXES if name.startswith(new)]
+    return names + list(_OLD_NAMES.get(name, ()))
+
+
+def env(name: str | None, default: str = "") -> str:
+    """An environment variable (or .env line), by its current or an older name."""
+    return _first(*env_names(name), default=default) if name else default
+
+
+def env_source(name: str | None) -> str:
+    """Which variable actually supplied the value ('' when none is set)."""
+    return next((n for n in env_names(name) if os.getenv(n)), "") if name else ""
+
+
 def _fallbacks(prefix: str) -> tuple[tuple[tuple[str, str], ...], ...]:
     """<prefix>_FALLBACK_<n>_BASE_URL / _API_KEY / _MODEL / _API for n = 1, 2, ...
     in order. A fallback states only what differs from the primary endpoint,
@@ -54,7 +78,7 @@ def _fallbacks(prefix: str) -> tuple[tuple[tuple[str, str], ...], ...]:
     Numbering stops at the first n with nothing set."""
     out = []
     for n in range(1, 10):
-        spec = {field: os.getenv(f"{prefix}_FALLBACK_{n}_{var}", "")
+        spec = {field: env(f"{prefix}_FALLBACK_{n}_{var}")
                 for field, var in (("base_url", "BASE_URL"), ("api_key", "API_KEY"), ("model", "MODEL"), ("api", "API"))}
         if not any(spec.values()):
             break
@@ -139,18 +163,35 @@ class Settings:
     # Defaults to the same database as the vectors, as on the pilot.
     graph_dsn: str = os.getenv("ESAM_GRAPH_DSN", "")
 
-    # ── Chat model (lesson 05) ──────────────────────────────────────────────
-    # Any OpenAI-compatible chat endpoint, e.g. the IL5 API Gateway. If unset,
-    # lesson 05 prints the prompt it WOULD send instead of calling a model.
-    chat_base_url: str = os.getenv("ESAM_CHAT_BASE_URL", "")
-    chat_api_key: str = os.getenv("ESAM_CHAT_API_KEY", "")
-    chat_model: str = os.getenv("ESAM_CHAT_MODEL", "")
+    # ── Models: one endpoint per role ───────────────────────────────────────
+    # Each role has its OWN url, key, model, API and fallbacks:
+    #   ESAM_REASONING_*   the model that reads, answers and reviews (lessons
+    #                      05/06 and all the crew's agents)
+    #   ESAM_CODING_*      the model approved for writing code
+    #   ESAM_VISION_*      the model that describes picture diagrams
+    # The environment profiles (config/environments/*.yaml) name these same
+    # variables, so .env is the one place to set them.
+    #
+    # Reasoning. Any OpenAI-compatible endpoint, e.g. the IL5 API Gateway. If
+    # unset, lesson 05 prints the prompt it WOULD send instead of calling a
+    # model. (The fields are called chat_* and the variables were ESAM_CHAT_*
+    # first; the old names are still read.)
+    chat_base_url: str = env("ESAM_REASONING_BASE_URL")
+    chat_api_key: str = env("ESAM_REASONING_API_KEY")
+    chat_model: str = env("ESAM_REASONING_MODEL")
     # Which API the endpoint speaks: "chat" (/chat/completions, the default),
     # "responses" (/responses) or "auto" (chat, then responses if chat fails).
-    chat_api: str = os.getenv("ESAM_CHAT_API", "chat")
+    chat_api: str = env("ESAM_REASONING_API", "chat")
     # Endpoints tried, in order, when the one above fails (esamkit/llm.py):
-    # ESAM_CHAT_FALLBACK_1_BASE_URL, _API_KEY, _MODEL, _API; then _2_, ...
-    chat_fallbacks: tuple = _fallbacks("ESAM_CHAT")
+    # ESAM_REASONING_FALLBACK_1_BASE_URL, _API_KEY, _MODEL, _API; then _2_, ...
+    chat_fallbacks: tuple = _fallbacks("ESAM_REASONING")
+    # Coding. Nothing is shared with reasoning: no model or no URL here means
+    # there is no coding model.
+    coding_base_url: str = env("ESAM_CODING_BASE_URL")
+    coding_api_key: str = env("ESAM_CODING_API_KEY")
+    coding_model: str = env("ESAM_CODING_MODEL")
+    coding_api: str = env("ESAM_CODING_API", "chat")
+    coding_fallbacks: tuple = _fallbacks("ESAM_CODING")
     # Seconds to wait for one answer, and how long a failed endpoint is
     # skipped before it is tried again.
     llm_timeout: float = float(os.getenv("ESAM_LLM_TIMEOUT", "120") or 120)

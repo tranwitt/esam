@@ -36,6 +36,12 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
 - **Several documents of one type / parts**: `part: "n of N"` on a baseline entry (ontology v0.5), read from a
   `Part` header column or `--set part=`. `esamkit.ontology.part_sets`; incomplete set = warning, duplicate part =
   error. Cockpit and `check_coverage` list every document of a type. Tests: `tests/test_multipart.py`.
+- **Environment file ↔ profiles**: profiles name the `.env.example` variables (`<key>_env`, env wins when set).
+  Roles have separate endpoints: `ESAM_REASONING_*` (was `ESAM_CHAT_*`, still read), `ESAM_CODING_*`,
+  `ESAM_VISION_*`; fallbacks via `fallbacks_env`. The existing `.env` (`ESAM_CHAT_API_KEY`) keeps working.
+  `tests/test_env_file.py` fails if a profile names a variable `.env.example` lacks. Behaviour changes: the local
+  profile no longer sends pictures to a model unless `ESAM_VISION_MODEL` is set; pilot profiles follow
+  `ESAM_EMBED_BASE_URL` / `ESAM_DIAGRAMS` when set (they used to ignore them).
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

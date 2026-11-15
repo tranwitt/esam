@@ -80,14 +80,37 @@ llm:
   roles:
     reasoning:
       model: gpt-5.1
-      base_url_env: ESAM_GATEWAY_URL
-      api_key_env: ESAM_GATEWAY_KEY
-      api: chat                    # chat | responses | auto (chat, then responses on the same endpoint)
-      fallbacks:
-        - api: responses           # same endpoint and model, the Responses API
-        - base_url_env: ESAM_GATEWAY_B_URL       # another endpoint; unset fields come from the primary
-          api_key_env: ESAM_GATEWAY_B_KEY
+      model_env: ESAM_REASONING_MODEL          # when this variable is set in .env it replaces the line above
+      base_url_env: ESAM_REASONING_BASE_URL
+      api_key_env: ESAM_REASONING_API_KEY
+      api: chat                                # chat | responses | auto (chat, then responses on the same endpoint)
+      api_env: ESAM_REASONING_API
+      fallbacks_env: ESAM_REASONING_FALLBACK   # numbered variables in .env, see below
+    coding:                                    # its own endpoint: nothing is shared with reasoning
+      model: nemotron-4-15b
+      model_env: ESAM_CODING_MODEL
+      base_url_env: ESAM_CODING_BASE_URL
+      api_key_env: ESAM_CODING_API_KEY
+      api_env: ESAM_CODING_API
+      fallbacks_env: ESAM_CODING_FALLBACK
 ```
+
+**The environment file and the profiles.** Any profile key may have a sibling `<key>_env` naming a variable;
+when that variable is set (in `esam/.env` or the environment) it is used, otherwise the value written in the
+profile. The shipped profiles name exactly the variables in `.env.example`, so `.env` is the one place to set
+URLs, models and keys, and `python -m crew.main env` shows what is in effect:
+
+| Role | Variables | Notes |
+|---|---|---|
+| `reasoning` (all the crew's agents, lessons 05/06) | `ESAM_REASONING_BASE_URL`, `_API_KEY`, `_MODEL`, `_API`, `ESAM_REASONING_FALLBACK_<n>_BASE_URL` / `_API_KEY` / `_MODEL` / `_API` | `ESAM_CHAT_*` is the older name and is still read |
+| `coding` (the model approved for writing code) | `ESAM_CODING_BASE_URL`, `_API_KEY`, `_MODEL`, `_API`, `ESAM_CODING_FALLBACK_<n>_…` | Separate from reasoning: no URL or key is shared. Off when it has no model. `crew.crew.coding_llm(profile)` returns its model; no agent of this crew writes code yet |
+| `vision` (describes picture diagrams) | `ESAM_VISION_MODEL`, `_BASE_URL`, `_API_KEY`, `_API`, `ESAM_VISION_FALLBACK_<n>_…` | Off until `ESAM_VISION_MODEL` is set. What it leaves unset comes from reasoning |
+
+A fallback states only what differs from the role's primary endpoint (`ESAM_REASONING_FALLBACK_1_API=responses`
+is the same endpoint over the Responses API). `ESAM_GATEWAY_URL` / `ESAM_GATEWAY_KEY`, which used to serve both
+roles, are still read for whichever of the two has no URL or key of its own. Also set from `.env`:
+`ESAM_COLLECTION`, `ESAM_DIAGRAMS`, `ESAM_EMBED_MODEL`, `ESAM_EMBED_BASE_URL`, `ESAM_EMBED_API_KEY`,
+`ESAM_EMBED_MODEL_DIR`, `ESAM_PG_DSN`, `ESAM_GREMLIN_URL`. A profile may still list `fallbacks:` itself.
 
 With one route the crew uses a plain CrewAI `LLM` (`api: responses` selects CrewAI's Responses API support).
 With several it uses `FailoverLLM` (`crew/llm.py`): a call that fails because the endpoint is unreachable, does
@@ -95,9 +118,7 @@ not offer that API or model (404/405), is overloaded (408/429/5xx) or rejects th
 route, and the failed route is skipped for `ESAM_LLM_FAILOVER_COOLDOWN` seconds (300). Errors that would repeat
 anywhere (context too long, content filter) are raised unchanged. Which routes served a run is printed at the
 end of it. A fallback whose URL or key variable is unset is left out and reported by `python -m crew.main env`.
-The shipped profiles have fallbacks commented out: nothing changes until you add them.
-
-The `vision` role (describing picture diagrams) uses the reasoning role's endpoint unless given its own.
+With no fallback variable set a role has one route and nothing changes.
 
 ## The graph: status, reload, reset
 

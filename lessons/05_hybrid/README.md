@@ -59,7 +59,7 @@ safeguard stays, because which document wins step 1 depends on wording.
 
 ## What the chat model receives
 
-Without `ESAM_CHAT_*` set, the script stops here and prints the prompt (dry run):
+Without `ESAM_REASONING_*` set, the script stops here and prints the prompt (dry run):
 
 ```
 QUESTION: If we change the EBC1 message period, what is affected?
@@ -117,9 +117,9 @@ Point it at any OpenAI-compatible chat endpoint (on the pilot, the IL5 API Gatew
 
 ```bash
 # esam/.env
-ESAM_CHAT_BASE_URL=https://<gateway>/v1
-ESAM_CHAT_API_KEY=...
-ESAM_CHAT_MODEL=<model name>
+ESAM_REASONING_BASE_URL=https://<gateway>/v1
+ESAM_REASONING_API_KEY=...
+ESAM_REASONING_MODEL=<model name>
 ```
 
 ## Try this

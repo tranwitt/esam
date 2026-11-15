@@ -18,7 +18,7 @@ else".
 Where routes come from:
   * a profile (config/environments/<name>.yaml, llm.roles.<role>.api and
     .fallbacks), resolved by esamkit.environment.role_routes();
-  * or the environment (ESAM_CHAT_API, ESAM_CHAT_FALLBACK_1_BASE_URL, ...),
+  * or the environment (ESAM_REASONING_API, ESAM_REASONING_FALLBACK_1_BASE_URL, ...),
     read by esamkit.config and turned into routes by chat_routes() below.
 
 What counts as "failed" (should_failover): no answer at all (connection
@@ -107,6 +107,16 @@ def build_routes(primary: dict, fallbacks: list[dict] | tuple = ()) -> list[Rout
 def chat_routes(s: Settings = default_settings) -> list[Route]:
     return build_routes({"base_url": s.chat_base_url, "model": s.chat_model, "api_key": s.chat_api_key,
                          "api": s.chat_api}, [dict(f) for f in s.chat_fallbacks])
+
+
+def coding_routes(s: Settings = default_settings) -> list[Route]:
+    """The model approved for writing code: its own endpoint, key, API and
+    fallbacks (ESAM_CODING_*, or the profile's coding role). Nothing is taken
+    from the reasoning model; not configured means an empty list."""
+    if not s.coding_model:
+        return []
+    return build_routes({"base_url": s.coding_base_url, "model": s.coding_model, "api_key": s.coding_api_key,
+                         "api": s.coding_api}, [dict(f) for f in s.coding_fallbacks])
 
 
 def vision_routes(s: Settings = default_settings) -> list[Route]:
@@ -334,5 +344,5 @@ def complete(system: str, user: str, images: list[tuple[str, bytes]] | tuple = (
     """Ask the chat model (or the given routes), failing over between routes."""
     routes = chat_routes(s) if routes is None else routes
     if not routes:
-        raise ValueError("no chat model is configured: set ESAM_CHAT_BASE_URL and ESAM_CHAT_MODEL")
+        raise ValueError("no chat model is configured: set ESAM_REASONING_BASE_URL and ESAM_REASONING_MODEL")
     return failover_for(routes, s).run(lambda r: request_text(r, system, user, images, s.llm_timeout)[0])

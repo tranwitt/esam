@@ -42,7 +42,8 @@ from urllib.parse import urlparse
 
 import yaml
 
-from .config import PROJECT_ROOT, Settings, default_model_dir, settings as default_settings
+from .config import PROJECT_ROOT, Settings, _fallbacks as env_fallbacks, default_model_dir, env as config_env
+from .config import settings as default_settings
 from .llm import Route, build_routes, normalize_api
 
 PROFILE_DIR = PROJECT_ROOT / "config" / "environments"
@@ -93,7 +94,18 @@ def load_profile(name: str | None = None) -> dict:
 
 
 def _env(name: str | None) -> str:
-    return os.getenv(name, "") if name else ""
+    """A variable named by a profile, by its current or an older name (esamkit.config.env)."""
+    return config_env(name)
+
+
+def _pick(spec: dict, key: str):
+    """A profile value that .env may set: `<key>_env` names a variable which,
+    when set, is used; otherwise the value written under `<key>`.
+
+        model: gpt-5.1
+        model_env: ESAM_REASONING_MODEL      # set it in .env and it replaces gpt-5.1
+    """
+    return _env(spec.get(f"{key}_env")) or spec.get(key) or ""
 
 
 def mask_dsn(dsn: str) -> str:
@@ -101,66 +113,89 @@ def mask_dsn(dsn: str) -> str:
     return re.sub(r"(://[^:/@]+:)[^@]*@", r"\1***@", dsn)
 
 
-_INHERITED = ("base_url", "base_url_env", "api_key_env", "api", "fallbacks")
+ROLE_ALIASES = {"coding": ("coding", "code")}       # `code` was the role's first name
 
 
 def role_spec(profile: dict, role: str) -> dict | None:
-    """The profile's entry for a role. The vision role (the model that reads
-    diagrams) may state only its model: endpoint, key, API and fallbacks then
-    come from the reasoning role."""
+    """The profile's entry for a role, as written, or None when the role has
+    no model. `coding` and `vision` are optional roles: with no model (none
+    written, and the variable `model_env` names not set) they do not exist."""
     roles = (profile.get("llm") or {}).get("roles") or {}
-    spec = roles.get(role)
-    if not spec:
+    spec = next((roles[k] for k in ROLE_ALIASES.get(role, (role,)) if roles.get(k)), None)
+    if not spec or (role != "reasoning" and not _pick(spec, "model")):
         return None
-    if role == "vision" and not (spec.get("base_url") or spec.get("base_url_env")):
-        reasoning = roles.get("reasoning") or {}
-        spec = {**{k: reasoning[k] for k in _INHERITED if k in reasoning}, **spec}
     return spec
 
 
 def _concrete(spec: dict) -> dict:
-    return {"base_url": spec.get("base_url") or _env(spec.get("base_url_env")), "model": spec.get("model", ""),
-            "api_key": _env(spec.get("api_key_env")), "api": spec.get("api", "")}
+    return {"base_url": _pick(spec, "base_url"), "model": _pick(spec, "model"),
+            "api_key": _env(spec.get("api_key_env")), "api": _pick(spec, "api")}
 
 
 def _fallback_specs(spec: dict) -> tuple[list[dict], list[str]]:
-    """(usable fallbacks, why the others are skipped). A fallback that names
-    a variable which is not set is not configured: it is skipped, never
-    quietly pointed at the primary endpoint."""
+    """(usable fallbacks as concrete values, why the others are skipped).
+    Fallbacks come from the profile's `fallbacks:` list and from the numbered
+    variables under `fallbacks_env` (ESAM_REASONING_FALLBACK -> _1_BASE_URL,
+    _1_API_KEY, _1_MODEL, _1_API, then _2_ ...). A fallback that names a
+    variable which is not set is not configured: it is skipped, never quietly
+    pointed at the primary endpoint."""
     usable, skipped = [], []
     for i, fb in enumerate(spec.get("fallbacks") or [], 1):
-        missing = [fb[k] for k in ("base_url_env", "api_key_env") if fb.get(k) and not _env(fb[k])]
+        missing = [fb[k] for k in ("base_url_env", "api_key_env") if fb.get(k) and not _env(fb[k]) and not fb.get(k[:-4])]
         if missing:
             skipped.append(f"fallback {i}: set {' and '.join(missing)}")
         else:
-            usable.append(fb)
+            usable.append(_concrete(fb))
+    prefix = spec.get("fallbacks_env")
+    if prefix:
+        usable += [dict(f) for f in env_fallbacks(prefix.removesuffix("_FALLBACK"))]
     return usable, skipped
+
+
+def role_endpoint(profile: dict, role: str) -> tuple[dict, list[dict], list[str]] | None:
+    """(primary, fallbacks, skipped fallbacks) for a role, as concrete values.
+    Reasoning and coding are separate: neither takes anything from the other.
+    Only the vision role borrows: whatever it leaves unset (URL, key, API,
+    fallbacks) comes from the reasoning role, so it may state just a model."""
+    spec = role_spec(profile, role)
+    if not spec:
+        return None
+    primary = _concrete(spec)
+    fallbacks, skipped = _fallback_specs(spec)
+    if role == "vision":
+        got = role_endpoint(profile, "reasoning")
+        if got:
+            own_endpoint = bool(primary["base_url"])
+            for key in ("base_url", "api_key", "api"):
+                primary[key] = primary[key] or got[0][key]
+            if not own_endpoint and not fallbacks and not spec.get("fallbacks"):
+                fallbacks, skipped = got[1], got[2]
+    return primary, fallbacks, skipped
 
 
 def role_routes(profile: dict, role: str) -> list[Route]:
     """The endpoints a role's calls go to, in order: its primary, then its
     fallbacks (esamkit/llm.py). Empty when the role is not configured."""
-    spec = role_spec(profile, role)
-    if not spec:
-        return []
-    return build_routes(_concrete(spec), [_concrete(fb) for fb in _fallback_specs(spec)[0]])
+    got = role_endpoint(profile, role)
+    return build_routes(got[0], got[1]) if got else []
 
 
 def resolve(profile: dict) -> dict:
     """Concrete values for this profile: URLs, keys (presence only), DSN."""
     roles = {}
-    for role in ((profile.get("llm") or {}).get("roles") or {}):
-        spec = role_spec(profile, role)
-        if not spec:
+    for name in ((profile.get("llm") or {}).get("roles") or {}):
+        role = next((r for r, names in ROLE_ALIASES.items() if name in names), name)
+        got, spec = role_endpoint(profile, role), role_spec(profile, role)
+        if not got:
             roles[role] = None
             continue
-        usable, skipped = _fallback_specs(spec)
-        roles[role] = {"model": spec.get("model", ""),
-                       "base_url": spec.get("base_url") or _env(spec.get("base_url_env")),
+        primary, _, skipped = got
+        roles[role] = {"model": primary["model"], "model_env": spec.get("model_env"),
+                       "base_url": primary["base_url"],
                        "base_url_env": spec.get("base_url_env"),
                        "api_key_env": spec.get("api_key_env"),
-                       "api_key_set": bool(_env(spec.get("api_key_env"))),
-                       "api": normalize_api(spec.get("api")),
+                       "api_key_set": bool(primary["api_key"]),
+                       "api": normalize_api(primary["api"]),
                        "routes": [r.describe() for r in role_routes(profile, role)],
                        "fallbacks_skipped": skipped}
     db = profile.get("database") or {}
@@ -169,7 +204,7 @@ def resolve(profile: dict) -> dict:
     return {"roles": roles, "dsn": dsn, "dsn_masked": mask_dsn(dsn) if dsn else "",
             "dsn_source": ("env " + db.get("dsn_env", "")) if _env(db.get("dsn_env")) else
                           ("profile default (learning only)" if dsn else "none"),
-            "graph_url": graph.get("url") or _env(graph.get("url_env"))}
+            "graph_url": _pick(graph, "url")}
 
 
 def embedding_choice(profile: dict, base: Settings = default_settings) -> dict:
@@ -185,30 +220,29 @@ def embedding_choice(profile: dict, base: Settings = default_settings) -> dict:
           dimensions: 768                         # endpoint backend, optional
     """
     emb = profile.get("embeddings") or {}
-    model = _env(emb.get("model_env")) or emb.get("model") or emb.get("model_id") or ""
-    url = emb.get("base_url") or _env(emb.get("base_url_env"))
+    model = _pick(emb, "model") or emb.get("model_id") or ""
+    url = _pick(emb, "base_url")
     backend = emb.get("backend", base.embed_backend)
-    if backend == "auto":
-        backend = "openai" if url else "local"
-    model_dir = Path(emb.get("model_dir") or (default_model_dir(model) if model else base.embed_model_dir))
+    if backend == "auto":                                     # ESAM_EMBED_BACKEND, else by whether there is a URL
+        backend = os.getenv("ESAM_EMBED_BACKEND") or ("openai" if url else "local")
+    model_dir = Path(_pick(emb, "model_dir") or (default_model_dir(model) if model else base.embed_model_dir))
     return {"backend": backend, "model": model, "base_url": url,
             "model_source": ("env " + emb["model_env"]) if _env(emb.get("model_env")) else "profile",
-            "url_source": "profile" if emb.get("base_url") else (("env " + emb["base_url_env"]) if url else "none"),
+            "url_source": (("env " + emb["base_url_env"]) if _env(emb.get("base_url_env")) else "profile") if url else "none",
             "base_url_env": emb.get("base_url_env"), "api_key_env": emb.get("api_key_env"),
             "api_key": _env(emb.get("api_key_env")),
             "model_dir": model_dir if model_dir.is_absolute() else PROJECT_ROOT / model_dir,
             "dimensions": int(emb.get("dimensions") or 0)}
 
 
-def _fallback_items(spec: dict | None) -> tuple:
-    return tuple(tuple(sorted((k, v) for k, v in _concrete(fb).items() if v))
-                 for fb in (_fallback_specs(spec)[0] if spec else []))
+def _fallback_items(fallbacks: list[dict]) -> tuple:
+    return tuple(tuple(sorted((k, v) for k, v in fb.items() if v)) for fb in fallbacks)
 
 
 def settings_for(profile: dict, base: Settings = default_settings) -> Settings:
     """esamkit Settings for this profile, so factories build the right backends."""
     r = resolve(profile)
-    reasoning, vision = role_spec(profile, "reasoning") or {}, role_spec(profile, "vision")
+    reasoning, coding, vision = (role_endpoint(profile, role) for role in ("reasoning", "coding", "vision"))
     emb, vec, graph = embedding_choice(profile, base), profile.get("vector") or {}, profile.get("graph") or {}
     remote = emb["backend"] == "openai"
     out = replace(
@@ -221,20 +255,25 @@ def settings_for(profile: dict, base: Settings = default_settings) -> Settings:
         embed_model=(emb["model"] or base.embed_model) if remote else base.embed_model,
         embed_dimensions=emb["dimensions"] or base.embed_dimensions,
         vector_backend=vec.get("backend", base.vector_backend),
-        collection=vec.get("collection", base.collection),
+        collection=_pick(vec, "collection") or base.collection,
         pg_dsn=r["dsn"] or base.pg_dsn,
         graph_backend=graph.get("backend", base.graph_backend),
-        chat_base_url=(r["roles"].get("reasoning") or {}).get("base_url", base.chat_base_url),
-        chat_api_key=_env(reasoning.get("api_key_env")) or base.chat_api_key,
-        chat_model=reasoning.get("model", base.chat_model),
-        chat_api=reasoning.get("api", base.chat_api),
-        chat_fallbacks=_fallback_items(reasoning) if reasoning else base.chat_fallbacks,
-        diagrams=(profile.get("documents") or {}).get("diagrams", base.diagrams),
+        diagrams=_pick(profile.get("documents") or {}, "diagrams") or base.diagrams,
     )
+    if reasoning:
+        p = reasoning[0]
+        out = replace(out, chat_base_url=p["base_url"], chat_api_key=p["api_key"] or base.chat_api_key,
+                      chat_model=p["model"] or base.chat_model, chat_api=p["api"] or base.chat_api,
+                      chat_fallbacks=_fallback_items(reasoning[1]))
+    # The profile decides which optional roles exist: one it does not configure is off, whatever the base says.
+    p, fallbacks = (coding[0], coding[1]) if coding else ({}, [])
+    out = replace(out, coding_model=p.get("model", ""), coding_base_url=p.get("base_url", ""),
+                  coding_api_key=p.get("api_key", ""), coding_api=p.get("api") or "chat",
+                  coding_fallbacks=_fallback_items(fallbacks))
     if vision:
-        v = _concrete(vision)
-        out = replace(out, vision_model=v["model"], vision_base_url=v["base_url"], vision_api_key=v["api_key"],
-                      vision_api=v["api"], vision_fallbacks=_fallback_items(vision))
+        p = vision[0]
+        out = replace(out, vision_model=p["model"], vision_base_url=p["base_url"], vision_api_key=p["api_key"],
+                      vision_api=p["api"], vision_fallbacks=_fallback_items(vision[1]))
     return out
 
 
@@ -455,7 +494,10 @@ def probe_llm(profile: dict, r: dict, role: str, network: bool) -> Probe:
     spec = r["roles"].get(role)
     name = f"llm.{role}"
     if spec is None:
-        return Probe(name, "not_configured", "no model for this role in the profile")
+        raw = next((x for k in ROLE_ALIASES.get(role, (role,))
+                    if (x := ((profile.get("llm") or {}).get("roles") or {}).get(k))), None) or {}
+        hint = f": set {raw['model_env']} to turn it on" if raw.get("model_env") else ""
+        return Probe(name, "not_configured", "no model for this role in the profile" + hint)
     if not spec["base_url"]:
         primary = Probe(name, "not_configured", f"set {spec['base_url_env']} to the endpoint URL")
     elif not spec["api_key_set"]:

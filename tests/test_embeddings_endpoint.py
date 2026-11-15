@@ -131,11 +131,19 @@ def test_a_profile_can_state_model_and_url_itself():
     assert s.embed_backend == "local" and s.embed_model_id == "BAAI/bge-base-en-v1.5" and s.embed_model_dir.name == "x"
 
 
-def test_pilot_profiles_still_use_the_staged_local_model(monkeypatch):
-    monkeypatch.setenv("ESAM_EMBED_BASE_URL", "https://should-be-ignored.example/v1")
+def test_pilot_profiles_use_the_staged_local_model_until_the_environment_file_says_otherwise(monkeypatch):
+    for v in ("ESAM_EMBED_BASE_URL", "ESAM_OPENAI_BASE_URL", "ESAM_EMBED_BACKEND", "ESAM_EMBED_MODEL", "ESAM_DIAGRAMS"):
+        monkeypatch.delenv(v, raising=False)
     for name in ("pilot-il5", "full-janusgraph"):
         s = env.settings_for(env.load_profile(name))
         assert s.embed_backend == "local" and s.embed_base_url == "" and s.diagrams == "local"
+        assert s.embed_model_id == "BAAI/bge-base-en-v1.5" and s.embed_model_dir.name == "bge-base-en-v1.5"
+    # the profiles name the .env variables, so a gateway embeddings route is one line in .env
+    monkeypatch.setenv("ESAM_EMBED_BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setenv("ESAM_EMBED_MODEL", "gateway-embed")
+    for name in ("pilot-il5", "full-janusgraph"):
+        s = env.settings_for(env.load_profile(name))
+        assert (s.embed_backend, s.embed_base_url, s.embed_model) == ("openai", "https://gateway.example/v1", "gateway-embed")
 
 
 def test_probe_checks_the_endpoint_and_reports_model_and_url(endpoint):
