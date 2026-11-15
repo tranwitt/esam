@@ -24,7 +24,7 @@ still there; it lives in the `esam-pgdata` volume, which survives reboots.
 ## 3. Check everything works (optional, 15 s)
 
 ```bash
-pytest -q                          # expect: 131 passed
+pytest -q                          # expect: no failures (about 200 tests)
 ```
 
 ## 4. Study

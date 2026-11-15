@@ -20,6 +20,12 @@ decide them:
 Adding the baseline line edits the SE's YAML as text (one line appended to
 `artifacts:`), so its comments and layout survive; `undo` removes that exact
 line.
+
+A document may arrive as markdown, as a Word file (.docx, .doc), or as a
+picture. `receive` (before A1) converts it to markdown once
+(esamkit/readers.py), describing its diagrams; the pipeline reviews, and the
+SE approves, that markdown. On ingest the markdown goes to data/documents/
+and the file as delivered is kept next to it in data/documents/originals/.
 """
 
 import re
@@ -34,11 +40,65 @@ from .embedders.base import Embedder
 from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
 from .ontology import Ontology, check_baseline
+from .readers import PICTURES, convert
 from .traceability import load_traceability, read_requirements, read_test_cases
 from .vectorstores.base import VectorStore
 
 _TITLE = re.compile(r"^#\s+(?P<id>[A-Z]+-[A-Z0-9]+-\d{3})\s*[—–-]\s*(?P<name>.+?)\s*$")
 _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
+
+
+ORIGINALS = "originals"       # data/documents/originals/: Word and picture files as they were delivered
+
+
+# ── Before A1: whatever arrived becomes markdown ─────────────────────────────
+
+def receive(path: Path, incoming: Path, s: Settings = default_settings, overrides: dict | None = None) -> dict:
+    """Read an arriving file and put the markdown the pipeline will review in
+    `incoming/<ID>.md`. A file that was not plain markdown is also kept as it
+    came, in `incoming/original/`. `overrides` are fields the SE supplies
+    (id, name, type, revision, attached_to) for what the document does not
+    state: a picture states nothing, so it needs at least id.
+
+    Returns {"entry", "document", "original", "conversion"}; entry has no
+    "id" when the document does not say what it is."""
+    overrides = overrides or {}
+    title = None
+    if path.suffix.lower() in PICTURES and overrides.get("id"):
+        title = f"{overrides['id']} — {overrides.get('name') or path.stem}"
+    conv = convert(path, s, diagrams=True, title=title)
+    entry = {**read_header(conv.text), **overrides}
+    out = {"entry": entry, "document": None, "original": None, "conversion": None}
+    if not entry.get("id"):
+        return out
+    entry["file"] = f"{entry['id']}.md"
+    incoming.mkdir(parents=True, exist_ok=True)
+    if conv.changed:
+        (incoming / entry["file"]).write_text(conv.text)
+        (incoming / "original").mkdir(exist_ok=True)
+        shutil.copy2(path, incoming / "original" / path.name)
+        out["original"] = f"{incoming.name}/original/{path.name}"
+        out["conversion"] = {"from": path.name, **conv.report()}
+    else:
+        shutil.copy2(path, incoming / entry["file"])
+    out["document"] = f"{incoming.name}/{entry['file']}"
+    return out
+
+
+def conversion_attention(conversion: dict | None) -> list[str]:
+    """What an SE must check by eye when the document was converted."""
+    if not conversion:
+        return []
+    out = [f"Converted from {conversion['from']} ({conversion['converter']}): requirements, tables and numbers "
+           "below were read from the converted text; spot-check them against the original."]
+    out += [f"Conversion note: {n}" for n in conversion.get("notes") or []]
+    for p in conversion.get("pictures") or []:
+        if any(r.startswith("vision model") for r in p.get("read_by") or []):
+            out.append(f"Picture {p['n']} ({p['name']}): described by a model. Compare the description with the picture.")
+        elif not p.get("read_by"):
+            out.append(f"Picture {p['n']} ({p['name']}): NOT described ({p.get('note') or 'no text found'}); "
+                       "its content is not searchable.")
+    return out
 
 
 # ── A1 ───────────────────────────────────────────────────────────────────────
@@ -201,18 +261,34 @@ def reload_graph(graph: GraphStore, s: Settings = default_settings) -> dict:
     return load_traceability(graph, base, s.documents_dir)
 
 
+def _original_files(s: Settings, doc_id: str) -> list[Path]:
+    folder = s.documents_dir / ORIGINALS
+    return sorted(p for p in folder.glob(f"{doc_id}.*") if p.is_file()) if folder.is_dir() else []
+
+
 def ingest(source: Path, entry: dict, emb: Embedder, store: VectorStore, graph: GraphStore,
-           backup_dir: Path, s: Settings = default_settings) -> dict:
+           backup_dir: Path, s: Settings = default_settings, original: Path | None = None) -> dict:
     """Put the document into the baseline and both stores. Returns the
     manifest `undo` needs. A new revision replaces the old file and line
-    (both kept in `backup_dir`)."""
+    (both kept in `backup_dir`). `source` is the markdown; `original` is the
+    Word or picture file it was converted from, if any, kept as
+    data/documents/originals/<ID>.<ext>."""
     target = s.documents_dir / entry["file"]
     manifest: dict = {"entry": entry, "file": str(target), "line": baseline_line(entry),
-                      "previous_file": None, "previous_line": None}
+                      "previous_file": None, "previous_line": None, "original": None, "previous_originals": []}
     backup_dir.mkdir(parents=True, exist_ok=True)
     if target.exists():
         manifest["previous_file"] = str(backup_dir / target.name)
         shutil.copy2(target, manifest["previous_file"])
+    for old_original in _original_files(s, entry["id"]):       # the previous revision's Word / picture file
+        (backup_dir / ORIGINALS).mkdir(exist_ok=True)
+        shutil.move(str(old_original), backup_dir / ORIGINALS / old_original.name)
+        manifest["previous_originals"].append(str(backup_dir / ORIGINALS / old_original.name))
+    if original is not None:
+        kept = s.documents_dir / ORIGINALS / f"{entry['id']}{original.suffix.lower()}"
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(original, kept)
+        manifest["original"] = str(kept)
     old = next((ln for ln in s.baseline_yaml.read_text().splitlines()
                 if re.match(rf"^\s*- \{{\s*id:\s*{re.escape(entry['id'])}\s*,", ln)), None)
     if old:
@@ -234,6 +310,11 @@ def undo(manifest: dict, store: VectorStore, graph: GraphStore, emb: Embedder | 
     removed_line = _remove_line(s.baseline_yaml, manifest["line"])
     removed_chunks = store.delete_source(entry["file"])
     target.unlink(missing_ok=True)
+    if manifest.get("original"):
+        Path(manifest["original"]).unlink(missing_ok=True)
+    for kept in manifest.get("previous_originals") or []:
+        (s.documents_dir / ORIGINALS).mkdir(parents=True, exist_ok=True)
+        shutil.copy2(kept, s.documents_dir / ORIGINALS / Path(kept).name)
     if manifest.get("previous_line"):
         _append_artifact(s.baseline_yaml, manifest["previous_line"])
     if manifest.get("previous_file"):

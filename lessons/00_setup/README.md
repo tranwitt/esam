@@ -76,6 +76,6 @@ python lessons/00_setup/stage_model.py --verify    # hashes + offline load, no n
    model weights."* A local embedding model is a set of model weights (~440 MB, MIT license).
    It's small and it can't generate text, but the statement as written forbids it. Either get
    an exception approved, or ask for an embeddings route on the IL5 API Gateway. With the
-   gateway option you set `ESAM_EMBED_BACKEND=openai` and no code changes.
+   gateway option you set `ESAM_EMBED_BASE_URL` and `ESAM_EMBED_MODEL` and no code changes.
 2. **License record.** The model card (`README.md` in the model folder) states the license.
    It travels with the files so whoever approves the transfer can read it.

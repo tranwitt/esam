@@ -275,7 +275,10 @@ class ReviewDocumentTool(WorkbenchTool):
     name: str = "review_document"
     description: str = ("Read the incoming document deterministically: its sections and chunk count; for a test "
                         "description every test case with its method, pass criteria and the TEXT of each "
-                        "requirement it verifies; for an SRS every requirement. Lists the issues found. Takes no input.")
+                        "requirement it verifies; for an SRS every requirement. Lists the issues found. If the "
+                        "document arrived as a Word file or a picture, also how it was converted to markdown, "
+                        "every picture with its description, and what the SE must check against the original. "
+                        "Takes no input.")
 
     def _call(self, **_) -> str:
         from esamkit.intake import review_document
@@ -283,6 +286,11 @@ class ReviewDocumentTool(WorkbenchTool):
         res = review_document(wb.document_text(), wb.state["entry"], wb.graph, wb.s)
         wb.state["review"] = res
         wb.save()
+        if wb.state.get("conversion"):       # a Word or picture source: what the SE must check by eye
+            from esamkit.intake import conversion_attention
+            return _dump({**res, "converted_from": wb.state["conversion"]["from"],
+                          "conversion": wb.state["conversion"],
+                          "conversion_attention": conversion_attention(wb.state["conversion"])})
         return _dump(res)
 
 
@@ -306,8 +314,9 @@ class IngestDocumentTool(WorkbenchTool):
             return "REFUSED: the ontology check now fails:\n" + _dump(oc["findings"])
         wb.state["health_before"] = report_for(wb.graph, wb.s)
         wb.state["review"] = review_document(wb.document_text(), wb.state["entry"], wb.graph, wb.s)
+        original = wb.folder / wb.state["original"] if wb.state.get("original") else None
         manifest = ingest(wb.folder / wb.state["document"], wb.state["entry"], wb.emb, wb.store, wb.graph,
-                          wb.folder / "replaced", wb.s)
+                          wb.folder / "replaced", wb.s, original=original)
         (wb.folder / "manifest.json").write_text(_dump(manifest))
         wb.state["state"] = "ingested"
         wb.save()

@@ -34,6 +34,7 @@ from .config import PROJECT_ROOT, Settings, settings as default_settings
 from .graphstores.base import GraphStore
 from .intake import ontology_check, read_header
 from .ontology import Ontology
+from .readers import read_document
 from .standards import Library
 from .traceability import read_requirements
 
@@ -77,12 +78,12 @@ def source_text(brief: dict, doc_id: str, s: Settings = default_settings) -> tup
     base = yaml.safe_load(s.baseline_yaml.read_text())
     art = next((a for a in base.get("artifacts") or [] if a["id"] == doc_id), None)
     if art and (s.documents_dir / art["file"]).exists():
-        return (s.documents_dir / art["file"]).read_text(), f"baseline ({art['file']})"
+        return read_document(s.documents_dir / art["file"], s), f"baseline ({art['file']})"
     src = next((x for x in brief.get("sources") or [] if x.get("id") == doc_id), None)
     if src and src.get("file"):
         f = Path(src["file"]) if Path(src["file"]).is_absolute() else PROJECT_ROOT / src["file"]
         if f.exists():
-            return f.read_text(), f"brief file {src['file']} (NOT in the baseline yet)"
+            return read_document(f, s), f"brief file {src['file']} (NOT in the baseline yet)"
     return None
 
 

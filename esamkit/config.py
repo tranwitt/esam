@@ -39,27 +39,85 @@ def _path(env_name: str, default: str) -> Path:
     return p if p.is_absolute() else PROJECT_ROOT / p
 
 
+def _first(*names: str, default: str = "") -> str:
+    """The first of these environment variables that is set and not empty."""
+    for name in names:
+        if os.getenv(name):
+            return os.environ[name]
+    return default
+
+
+def _fallbacks(prefix: str) -> tuple[tuple[tuple[str, str], ...], ...]:
+    """<prefix>_FALLBACK_<n>_BASE_URL / _API_KEY / _MODEL / _API for n = 1, 2, ...
+    in order. A fallback states only what differs from the primary endpoint,
+    so one variable is enough (e.g. only _API=responses, or only _BASE_URL).
+    Numbering stops at the first n with nothing set."""
+    out = []
+    for n in range(1, 10):
+        spec = {field: os.getenv(f"{prefix}_FALLBACK_{n}_{var}", "")
+                for field, var in (("base_url", "BASE_URL"), ("api_key", "API_KEY"), ("model", "MODEL"), ("api", "API"))}
+        if not any(spec.values()):
+            break
+        out.append(tuple(sorted((k, v) for k, v in spec.items() if v)))
+    return tuple(out)
+
+
+DEFAULT_EMBED_MODEL = "BAAI/bge-base-en-v1.5"
+
+
+def default_model_dir(model_id: str) -> str:
+    """models/<last part of the model id>, e.g. models/bge-base-en-v1.5."""
+    return f"models/{model_id.rstrip('/').split('/')[-1].lower()}"
+
+
 @dataclass(frozen=True)
 class Settings:
     # ── Embeddings ──────────────────────────────────────────────────────────
+    # Two things choose the embedding model, wherever it runs:
+    #
+    #   ESAM_EMBED_MODEL      WHICH model. For the local backend, its Hugging
+    #                         Face id; for an endpoint, the name it serves.
+    #   ESAM_EMBED_BASE_URL   WHERE it runs: the URL of an OpenAI-compatible
+    #                         endpoint (…/v1; ESAM posts to …/v1/embeddings).
+    #                         Unset = on this machine, from a folder on disk.
+    #
     # "local"  = sentence-transformers model loaded from a folder on disk
     # "openai" = any OpenAI-compatible /v1/embeddings endpoint (vLLM, TEI,
-    #            Ollama, or real OpenAI if the gateway ever enables it)
-    embed_backend: str = os.getenv("ESAM_EMBED_BACKEND", "local")
+    #            Ollama, a gateway, or OpenAI)
+    # The backend follows from the URL: set ESAM_EMBED_BASE_URL and it is
+    # "openai", leave it unset and it is "local". ESAM_EMBED_BACKEND overrides.
+    embed_backend: str = os.getenv("ESAM_EMBED_BACKEND") or (
+        "openai" if _first("ESAM_EMBED_BASE_URL", "ESAM_OPENAI_BASE_URL") else "local")
 
-    # Hugging Face model id. Used (a) by lessons/00_setup/stage_model.py to
-    # download the model ONCE on an internet-connected machine, and (b) as the
-    # model's identity, stored next to every vector so stores never mix models.
-    embed_model_id: str = os.getenv("ESAM_EMBED_MODEL_ID", "BAAI/bge-base-en-v1.5")
+    # The model's identity. Used (a) by lessons/00_setup/stage_model.py to
+    # download a local model ONCE on an internet-connected machine, and (b)
+    # stored next to every vector so stores never mix models.
+    # (ESAM_EMBED_MODEL_ID is the older name of ESAM_EMBED_MODEL.)
+    embed_model_id: str = _first("ESAM_EMBED_MODEL", "ESAM_EMBED_MODEL_ID", default=DEFAULT_EMBED_MODEL)
 
-    # Folder that holds the pre-staged model files. At runtime we load ONLY
-    # from here — never from the internet.
-    embed_model_dir: Path = _path("ESAM_EMBED_MODEL_DIR", "models/bge-base-en-v1.5")
+    # Local backend: the folder that holds the pre-staged model files. At
+    # runtime we load ONLY from here, never from the internet. Defaults to
+    # models/<last part of the model id>.
+    embed_model_dir: Path = _path("ESAM_EMBED_MODEL_DIR", default_model_dir(
+        _first("ESAM_EMBED_MODEL", "ESAM_EMBED_MODEL_ID", default=DEFAULT_EMBED_MODEL)))
 
-    # Only for embed_backend="openai".
-    openai_base_url: str = os.getenv("ESAM_OPENAI_BASE_URL", "")
-    openai_api_key: str = os.getenv("ESAM_OPENAI_API_KEY", "")
-    openai_embed_model: str = os.getenv("ESAM_OPENAI_EMBED_MODEL", "")
+    # Endpoint backend ("openai"). The ESAM_OPENAI_* names are the older ones
+    # and still work.
+    embed_base_url: str = _first("ESAM_EMBED_BASE_URL", "ESAM_OPENAI_BASE_URL")
+    embed_api_key: str = _first("ESAM_EMBED_API_KEY", "ESAM_OPENAI_API_KEY")
+    # The model name sent to the endpoint. Empty = not chosen: the endpoint
+    # backend refuses to start rather than guess.
+    embed_model: str = _first("ESAM_EMBED_MODEL", "ESAM_OPENAI_EMBED_MODEL")
+    # Ask the endpoint for shorter vectors (models that support `dimensions`,
+    # e.g. text-embedding-3-*). 0 = the model's own size.
+    embed_dimensions: int = int(os.getenv("ESAM_EMBED_DIMENSIONS", "0") or 0)
+    embed_batch_size: int = int(os.getenv("ESAM_EMBED_BATCH_SIZE", "64") or 64)
+    # Text put in front of every query / stored chunk before it is sent to the
+    # endpoint. "auto" = what the model family was trained with (BGE: an
+    # instruction on queries; E5: "query: " / "passage: "; others: nothing).
+    # "none" = send the text as it is (the server adds the prefix itself).
+    embed_query_prefix: str = os.getenv("ESAM_EMBED_QUERY_PREFIX", "auto")
+    embed_doc_prefix: str = os.getenv("ESAM_EMBED_DOC_PREFIX", "auto")
 
     # ── Vector store ────────────────────────────────────────────────────────
     # "pgvector" = PostgreSQL + pgvector: the local Docker container here
@@ -87,6 +145,36 @@ class Settings:
     chat_base_url: str = os.getenv("ESAM_CHAT_BASE_URL", "")
     chat_api_key: str = os.getenv("ESAM_CHAT_API_KEY", "")
     chat_model: str = os.getenv("ESAM_CHAT_MODEL", "")
+    # Which API the endpoint speaks: "chat" (/chat/completions, the default),
+    # "responses" (/responses) or "auto" (chat, then responses if chat fails).
+    chat_api: str = os.getenv("ESAM_CHAT_API", "chat")
+    # Endpoints tried, in order, when the one above fails (esamkit/llm.py):
+    # ESAM_CHAT_FALLBACK_1_BASE_URL, _API_KEY, _MODEL, _API; then _2_, ...
+    chat_fallbacks: tuple = _fallbacks("ESAM_CHAT")
+    # Seconds to wait for one answer, and how long a failed endpoint is
+    # skipped before it is tried again.
+    llm_timeout: float = float(os.getenv("ESAM_LLM_TIMEOUT", "120") or 120)
+    llm_failover_cooldown: float = float(os.getenv("ESAM_LLM_FAILOVER_COOLDOWN", "300") or 300)
+
+    # ── Picture diagrams (esamkit/diagrams.py) ──────────────────────────────
+    # A diagram in a document (a picture file, or a picture inside a Word or
+    # markdown document) is turned into text so it can be searched:
+    #   auto   a vision model describes it if one is configured below;
+    #          otherwise the text found in the picture is used (SVG labels,
+    #          OCR when tesseract is installed)
+    #   local  never send a picture to a model: local text extraction only
+    #   off    keep only the figure's name and caption
+    diagrams: str = os.getenv("ESAM_DIAGRAMS", "auto")
+    # The model that looks at pictures. No model = no picture leaves this
+    # machine. URL, key and API default to the chat model's.
+    vision_model: str = os.getenv("ESAM_VISION_MODEL", "")
+    vision_base_url: str = os.getenv("ESAM_VISION_BASE_URL", "")
+    vision_api_key: str = os.getenv("ESAM_VISION_API_KEY", "")
+    vision_api: str = os.getenv("ESAM_VISION_API", "")
+    vision_fallbacks: tuple = _fallbacks("ESAM_VISION")
+    # Descriptions are kept by picture content + model, so the same diagram is
+    # described once however often its document is read.
+    diagram_cache_dir: Path = _path("ESAM_DIAGRAM_CACHE_DIR", "work/cache/diagrams")
 
     # ── Data ────────────────────────────────────────────────────────────────
     baseline_yaml: Path = _path("ESAM_BASELINE_YAML", "data/baseline/vehicle_decomposition.yaml")
@@ -94,9 +182,33 @@ class Settings:
     # The SE-owned vocabulary the baseline is checked against (esamkit/ontology.py).
     ontology_yaml: Path = _path("ESAM_ONTOLOGY_YAML", "data/ontology/esam_ontology.yaml")
 
+    # ── Word documents (esamkit/readers.py) ─────────────────────────────────
+    # How a legacy .doc is read:
+    #   auto         LibreOffice if it is installed (full conversion: automatic
+    #                numbers, vector pictures), otherwise the built-in reader
+    #   libreoffice  LibreOffice only; fail if it is missing
+    #   builtin      the built-in reader only (no external program is started)
+    # .docx is always read by the built-in reader.
+    doc_converter: str = os.getenv("ESAM_DOC_CONVERTER", "auto")
+    # Path of the soffice program, if it is not on PATH.
+    soffice_path: str = os.getenv("ESAM_SOFFICE", "")
+
     # ── Chunking ────────────────────────────────────────────────────────────
     chunk_size: int = int(os.getenv("ESAM_CHUNK_SIZE", "600"))       # characters
     chunk_overlap: int = int(os.getenv("ESAM_CHUNK_OVERLAP", "80"))  # characters
+
+    # Older names of the endpoint-embeddings settings.
+    @property
+    def openai_base_url(self) -> str:
+        return self.embed_base_url
+
+    @property
+    def openai_api_key(self) -> str:
+        return self.embed_api_key
+
+    @property
+    def openai_embed_model(self) -> str:
+        return self.embed_model
 
 
 settings = Settings()

@@ -12,7 +12,8 @@ from pathlib import Path
 import yaml
 from crewai import LLM, Agent, Crew, Process, Task
 
-from esamkit.environment import load_profile, resolve
+from esamkit.config import settings as default_settings
+from esamkit.environment import load_profile, resolve, role_routes
 from esamkit.usage import UsageLedger
 
 from .custom_tools import TOOLS, InspectEnvironmentTool, Workbench
@@ -24,14 +25,22 @@ def _yaml(name: str) -> dict:
     return yaml.safe_load((CONFIG / name).read_text())
 
 
-def reasoning_llm(profile: dict) -> LLM:
+def reasoning_llm(profile: dict):
     """The profile's reasoning model, over any OpenAI-compatible endpoint
-    (OpenAI on the laptop, the IL5 API Gateway on the pilot)."""
+    (OpenAI on the laptop, the IL5 API Gateway on the pilot): the Chat
+    Completions API or the Responses API (`api:`), and, when the profile
+    lists `fallbacks:`, the next endpoint when a call fails (crew/llm.py)."""
     import os
 
-    role = resolve(profile)["roles"]["reasoning"]
-    return LLM(model=f"openai/{role['model']}", base_url=role["base_url"],
-               api_key=os.getenv(role["api_key_env"] or "", ""))
+    from .llm import build_llm
+
+    routes = role_routes(profile, "reasoning")
+    if not routes:                       # not configured: step 0 reports it; keep the object the same as before
+        role = resolve(profile)["roles"]["reasoning"]
+        return LLM(model=f"openai/{role['model']}", base_url=role["base_url"],
+                   api_key=os.getenv(role["api_key_env"] or "", ""))
+    cooldown = (profile.get("llm") or {}).get("failover_cooldown_s", default_settings.llm_failover_cooldown)
+    return build_llm(routes, float(cooldown))
 
 
 class EsamCrew:

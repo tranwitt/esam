@@ -4,8 +4,12 @@ ESAM crew runner.
 
     python -m crew.main env [--env pilot-il5]     # step 0: environment check + Environment Engineer's report
 
-    # Pipeline A: a document → verified ingestion, with an SE approval in the middle
+    # Pipeline A: a document → verified ingestion, with an SE approval in the middle.
+    # The document may be markdown, Word (.docx, .doc) or a picture of a diagram.
     python -m crew.main review path/to/STD-BRK-001.md   # A1 ontology check, A2 review → STOP
+    python -m crew.main review path/to/ICD-BRK-002.docx
+    python -m crew.main review topology.png --set id=ICD-BRK-003 --set name="Brake bus topology" \
+                                            --set revision=A --set attached_to=SUB-BRK-ECU
     python -m crew.main inbox                           # the same for every file in work/inbox/
     python -m crew.main runs                            # runs and their state
     python -m crew.main approve <run> [--note ...]      # the SE's decision → A3 ingest, A4 verify
@@ -100,11 +104,14 @@ def cmd_env(args) -> int:
     from crew.crew import EsamCrew
 
     t = time.perf_counter()
-    crew = EsamCrew(profile["name"], ledger, report).environment_crew()
+    esam_crew = EsamCrew(profile["name"], ledger, report)
+    crew = esam_crew.environment_crew()
     result = crew.kickoff(inputs={"environment": profile["name"],
                                   "needed_tools": ", ".join(report["capabilities"]["enabled"]) or "none"})
     usage = record_crew_usage(ledger, result, resolve(profile)["roles"]["reasoning"]["model"], "environment_engineer")
-    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000), detail={"command": "env", **usage})
+    routes = endpoint_report(esam_crew.llm)
+    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000),
+                  detail={"command": "env", **usage, **({"endpoints": routes} if routes else {})})
     (folder / "environment_report.md").write_text(str(result.raw))
     print(f"\n{result.raw}\n\nSaved: {folder}\nUsage: {usage}")
     return 0 if "GREEN LIGHT" in str(result.raw) else 1
@@ -143,9 +150,27 @@ def kickoff(crew, pipeline: str, wb, folder: Path, ledger: UsageLedger, inputs: 
     for spec_name, out in zip(crew.PIPELINES[pipeline]["tasks"], result.tasks_output):
         (folder / f"{spec_name}.md").write_text(str(out.raw))
     usage = record_crew_usage(ledger, result, crew.llm.model.removeprefix("openai/"), f"crew:{pipeline}")
-    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000), detail={"command": pipeline, **usage})
+    routes = endpoint_report(crew.llm)
+    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000),
+                  detail={"command": pipeline, **usage, **({"endpoints": routes} if routes else {})})
     print(f"\nUsage: {usage}")
     return str(result.raw)
+
+
+def endpoint_report(llm) -> dict:
+    """Which model endpoints served the run and which failed, when the profile
+    lists fallbacks (crew/llm.py). Empty for a single endpoint."""
+    summary = getattr(llm, "failover_summary", None)
+    if summary is None:
+        return {}
+    rep = summary()
+    if rep["failures"]:
+        print("\nModel endpoints:")
+        for name, calls in rep["served"].items():
+            print(f"  served {calls:>3} call(s): {name}")
+        for f in rep["failures"]:
+            print(f"  FAILED: {f['route']}: {f['error'][:160]}")
+    return rep
 
 
 def find_run(run: str) -> Path:
@@ -173,23 +198,40 @@ def _parse_sets(pairs: list[str]) -> dict:
 
 @logged("review", LAST_RUN, LOGS)
 def review_one(path: Path, args) -> int:
-    from esamkit.intake import read_header
+    import tempfile
 
-    entry = {**read_header(path.read_text()), **_parse_sets(args.set)}
-    if "id" in entry:
-        entry["file"] = f"{entry['id']}.md"
-    if not entry.get("id"):
-        print(f"{path.name}: no '# <ID> — <name>' title line, so ESAM can't tell what it is. "
-              "Add it, or give --set id=... name=...")
-        return 1
-    profile, report, EsamCrew = prepare(args.env, "review")
-    run_id, folder, ledger = new_run(f"review_{entry['id']}", profile["name"])
-    crew = EsamCrew(profile["name"], ledger, report)
-    check_tools(crew, "review")
-    (folder / "incoming").mkdir()
-    shutil.copy2(path, folder / "incoming" / entry["file"])
+    from esamkit.environment import settings_for
+    from esamkit.intake import conversion_attention, receive
+    from esamkit.readers import UnsupportedDocument
+
+    # Read the file once, before the run exists: a Word or picture file becomes
+    # markdown here (its diagrams described), and that markdown is what the
+    # agents review and the SE approves.
+    with tempfile.TemporaryDirectory(prefix="esam-incoming-") as tmp:
+        try:
+            got = receive(path, Path(tmp) / "incoming", settings_for(load_profile(args.env)), _parse_sets(args.set))
+        except UnsupportedDocument as e:
+            print(f"{path.name}: {e}")
+            return 1
+        entry = got["entry"]
+        if not entry.get("id"):
+            print(f"{path.name}: no '<ID> — <name>' title (a '# <ID> — <name>' line in markdown, the Title or first "
+                  "heading in Word), so ESAM can't tell what it is. Add it, or give --set id=... --set name=...")
+            return 1
+        profile, report, EsamCrew = prepare(args.env, "review")
+        run_id, folder, ledger = new_run(f"review_{entry['id']}", profile["name"])
+        crew = EsamCrew(profile["name"], ledger, report)
+        check_tools(crew, "review")
+        shutil.copytree(Path(tmp) / "incoming", folder / "incoming")
     state = {"run_id": run_id, "kind": "intake", "state": "reviewing", "created": _now(),
-             "environment": profile["name"], "source": str(path), "document": f"incoming/{entry['file']}", "entry": entry}
+             "environment": profile["name"], "source": str(path), "document": got["document"], "entry": entry}
+    if got["conversion"]:
+        state.update(original=got["original"], conversion=got["conversion"])
+        (folder / "conversion.json").write_text(json.dumps(got["conversion"], indent=1, ensure_ascii=False))
+        print(f"Converted {path.name} to markdown ({got['conversion']['converter']}); "
+              f"{len(got['conversion']['pictures'])} picture(s). The review is of {folder / got['document']}.")
+        for line in conversion_attention(got["conversion"])[1:]:
+            print(f"  {line}")
     wb = _workbench(profile, folder, state)
     wb.save()
     print(f"Run {run_id}: reviewing {entry['id']} (usage → {ledger.sink})")
@@ -213,10 +255,12 @@ def cmd_review(args) -> int:
 
 
 def cmd_inbox(args) -> int:
+    from esamkit.readers import SUPPORTED, document_files
+
     INBOX.mkdir(parents=True, exist_ok=True)
-    files = sorted(INBOX.glob("*.md"))
+    files = document_files(INBOX)
     if not files:
-        print(f"Inbox is empty: drop documents (.md) into {INBOX}")
+        print(f"Inbox is empty: drop documents ({', '.join(SUPPORTED)}) into {INBOX}")
         return 0
     rc = 0
     for f in files:

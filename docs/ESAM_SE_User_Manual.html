@@ -1740,7 +1740,7 @@ safety_assessment:
 |---|---|---|---|
 | STD-BRK-001 | STD | A | SUB-BRK-ECU |
 </code></pre></div>
-<p>The file name must be the document id (<code>STD-BRK-001.md</code>). For a new revision of an existing document, raise the revision letter: ESAM refuses a second copy at the same revision.</p>
+<p>ESAM stores the document under its id (<code>STD-BRK-001.md</code>). The document may be markdown, a Word file (<code>.docx</code> or <code>.doc</code>: the title in the Title or Heading 1 style, and the same table) or a picture of a diagram (which states nothing about itself, so whoever queues it supplies the id, name, revision and subsystem). A Word file or picture is converted to text for review; the approval request lists each picture and how it was read, and the file as delivered is kept in <code>data/documents/originals/</code>. For a new revision of an existing document, raise the revision letter: ESAM refuses a second copy at the same revision.</p>
 <p><strong>2. Queue the review.</strong> Put the file in the ESAM inbox (<code>work/inbox/</code>), then in the Cockpit choose <em>Review a document for ingestion</em> and pick it.</p>
 <p><strong>3. The agents review it, then stop.</strong> Triage checks it against the ontology: the right document type for that subsystem, a real subsystem, a valid id and revision. The Researcher reads its content. For a test description, it compares every test case's pass criteria with the requirement it verifies and marks each one <strong>matches</strong>, <strong>stricter</strong>, <strong>weaker</strong> or <strong>unclear</strong>, quoting both. The SE Reviewer writes an <strong>approval request</strong> ending with <em>RECOMMENDATION: INGEST</em> or <em>DO NOT INGEST</em>.</p>
 <p><strong>4. You decide</strong>, in <em>Waiting for your decision</em>:</p>
@@ -1864,7 +1864,7 @@ safety_assessment:
 </tr>
 <tr>
 <td data-label="You see">The document isn't in the list to review</td>
-<td data-label="It means">It isn't in <code>work/inbox/</code>, or isn't a <code>.md</code> file</td>
+<td data-label="It means">It isn't in <code>work/inbox/</code>, or isn't a markdown, Word (<code>.docx</code>, <code>.doc</code>) or picture file</td>
 <td data-label="Do this">Put it there; the list refreshes</td>
 </tr>
 <tr>

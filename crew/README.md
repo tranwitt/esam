@@ -12,7 +12,10 @@ python -m crew.main env                       # step 0 with the Environment Engi
 python -m esamkit.usage                       # tokens per model, calls per tool, last 7 days
 
 python -m crew.main review path/to/STD-BRK-001.md   # Pipeline A: A1 + A2, then STOP for the SE
-python -m crew.main inbox                           # the same for every .md in work/inbox/
+python -m crew.main review path/to/SRS-PWR-001.doc  # Word (.docx, .doc) works the same way
+python -m crew.main review topology.png --set id=ICD-BRK-003 --set name="Brake bus topology" \
+                           --set revision=A --set attached_to=SUB-BRK-ECU     # a picture diagram
+python -m crew.main inbox                           # the same for every document in work/inbox/
 python -m crew.main runs                            # runs and their state
 python -m crew.main approve <run>                   # the SE's decision: A3 ingest + A4 verify
 python -m crew.main reject <run> --note "why"
@@ -49,8 +52,8 @@ air-gapped; template), `full-janusgraph` (template).
 | database | connect, PostgreSQL + pgvector versions, latency; DSN shown masked | print the password |
 | vector | chunks per collection; the collection's embedding model matches the profile's | load the model |
 | graph | PostgreSQL CTE tables and counts; JanusGraph reachability (reported *not implemented in this build*) | |
-| embeddings | model staged on disk, size, dimension | load the model |
-| llm.\<role\> | key variable set; endpoint lists the model | spend tokens; contact a public host from an air-gapped profile |
+| embeddings | local: model staged on disk, size, dimension. Endpoint: one real embedding call, dimension | load the local model; contact a public host from an air-gapped profile |
+| llm.\<role\> | key variable set; endpoint lists the model; the same for each fallback (warns when only a fallback is usable) | spend tokens; contact a public host from an air-gapped profile |
 | crewai | installed version; telemetry and memory off | |
 
 **Capabilities**: each crew tool lists the services it needs (`TOOL_NEEDS` in `esamkit/environment.py`);
@@ -63,6 +66,34 @@ success) and run, in PostgreSQL `esam_usage` or `work/usage/usage.jsonl` when th
 shown only if a profile has `llm.pricing` with your own rates.
 
 Run folders: `work/runs/<timestamp>_<name>/` (gitignored).
+
+### Model endpoints: fallbacks and the Responses API
+
+A role in the profile has one primary endpoint and, optionally, fallbacks:
+
+```yaml
+llm:
+  roles:
+    reasoning:
+      model: gpt-5.1
+      base_url_env: ESAM_GATEWAY_URL
+      api_key_env: ESAM_GATEWAY_KEY
+      api: chat                    # chat | responses | auto (chat, then responses on the same endpoint)
+      fallbacks:
+        - api: responses           # same endpoint and model, the Responses API
+        - base_url_env: ESAM_GATEWAY_B_URL       # another endpoint; unset fields come from the primary
+          api_key_env: ESAM_GATEWAY_B_KEY
+```
+
+With one route the crew uses a plain CrewAI `LLM` (`api: responses` selects CrewAI's Responses API support).
+With several it uses `FailoverLLM` (`crew/llm.py`): a call that fails because the endpoint is unreachable, does
+not offer that API or model (404/405), is overloaded (408/429/5xx) or rejects the key is made again on the next
+route, and the failed route is skipped for `ESAM_LLM_FAILOVER_COOLDOWN` seconds (300). Errors that would repeat
+anywhere (context too long, content filter) are raised unchanged. Which routes served a run is printed at the
+end of it. A fallback whose URL or key variable is unset is left out and reported by `python -m crew.main env`.
+The shipped profiles have fallbacks commented out: nothing changes until you add them.
+
+The `vision` role (describing picture diagrams) uses the reasoning role's endpoint unless given its own.
 
 ## Step 1: Pipeline A (a document → verified ingestion)
 
@@ -78,6 +109,16 @@ disabled in this environment.
 | A3 ingest | Researcher | `ingest_document` | the tool refuses without a recorded approval, and re-runs the ontology check first |
 | A4 verify | SE Reviewer | `verify_ingestion`, `health_report` | the tool: chunks stored, attached in the graph, test cases + VERIFIES links, search finds it, integrity passes, health before vs after; VERIFIED / NOT VERIFIED |
 
+**Word documents and pictures.** `review` and `inbox` take `.md .txt .docx .doc .rtf` and picture files.
+The file is converted to markdown once, when it arrives (`esamkit/readers.py`); the agents review that
+markdown, the approval request says it was converted and by what, and lists every picture with how it was
+read (described by a model: compare with the picture; not described: its content is not searchable). On
+approval the markdown becomes `data/documents/<ID>.md` and the delivered file is kept as
+`data/documents/originals/<ID>.<ext>`; `undo` removes both. A picture states nothing about itself, so it
+needs `--set id=…` (and normally `name`, `revision`, `attached_to`). `documents.diagrams` in the profile
+(`auto | local | off`) decides whether pictures may go to the vision role's model; the pilot templates say
+`local`.
+
 What the document must state (SE manual §2.5): a title line `# <ID> — <name>` and the table
 `| Document | Type | Revision | Subsystem |`. Missing fields are ontology findings; the SE can supply them
 with `--set revision=A --set attached_to=SUB-…`.
@@ -92,7 +133,7 @@ with `git diff` and commit them, or `undo`.
 Ontology errors can't be approved past: the document is fixed and reviewed again.
 
 Run folder of an intake: `state.json` (state, entry, ontology result, review, approval, health before/after,
-verification), `incoming/<doc>`, one `.md` per task, `approval_request.md`, `manifest.json`,
+verification), `incoming/<ID>.md` (and `incoming/original/<file>` when it was converted), one `.md` per task, `approval_request.md`, `manifest.json`,
 `verification_report.md`. Inbox originals move to `work/inbox/done/`.
 
 **Interactive** (`ask`): Triage pins down the entities and the documents that would answer (present or

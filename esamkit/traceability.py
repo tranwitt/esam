@@ -33,6 +33,7 @@ from pathlib import Path
 
 from .baseline import Baseline, Edge, Vertex
 from .graphstores.base import GraphStore
+from .readers import read_document
 
 _REQ_LINE = re.compile(r"^- \*\*(?P<id>[A-Z]+-[A-Z0-9]+-\d{3})\*\*\s*(?P<text>.*)$")
 _SECTION = re.compile(r"^#{2,6}\s+(?P<title>.+)$")
@@ -119,6 +120,8 @@ def read_test_cases(text: str, artifact_id: str) -> Extracted:
             cur, key = {"id": m["id"], "title": m["title"].strip(), "fields": {}}, None
         elif _SECTION.match(line):
             close(); cur = None
+        elif line.lstrip().startswith(">"):
+            continue                                      # a quoted note or a figure block: not part of a field
         elif cur and (m := _FIELD.match(line.strip())):
             key = m["key"].lower()
             cur["fields"][key] = m["value"].strip()
@@ -140,9 +143,9 @@ def extract(baseline: Baseline, documents_dir: Path, only: set[str] | None = Non
             continue
         t = facts["artifact_type"]
         if t == "srs":
-            part = read_requirements(path.read_text(), facts["artifact_id"], facts["subsystem_id"])
+            part = read_requirements(read_document(path), facts["artifact_id"], facts["subsystem_id"])
         elif t == "std":
-            part = read_test_cases(path.read_text(), facts["artifact_id"])
+            part = read_test_cases(read_document(path), facts["artifact_id"])
         else:
             continue
         out.vertices += part.vertices

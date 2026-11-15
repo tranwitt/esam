@@ -737,7 +737,7 @@ Good questions name the thing you care about: *"Which brake ECU requirements hav
 | STD-BRK-001 | STD | A | SUB-BRK-ECU |
 ```
 
-The file name must be the document id (`STD-BRK-001.md`). For a new revision of an existing document, raise the revision letter: ESAM refuses a second copy at the same revision.
+ESAM stores the document under its id (`STD-BRK-001.md`). The document may be markdown, a Word file (`.docx` or `.doc`: the title in the Title or Heading 1 style, and the same table) or a picture of a diagram (which states nothing about itself, so whoever queues it supplies the id, name, revision and subsystem). A Word file or picture is converted to text for review; the approval request lists each picture and how it was read, and the file as delivered is kept in `data/documents/originals/`. For a new revision of an existing document, raise the revision letter: ESAM refuses a second copy at the same revision.
 
 **2. Queue the review.** Put the file in the ESAM inbox (`work/inbox/`), then in the Cockpit choose *Review a document for ingestion* and pick it.
 
@@ -789,7 +789,7 @@ Every run has a folder. *Recent runs* links to what's in it:
 | Tasks stay *queued*; the Worker panel warns | No worker is running | Ask whoever runs ESAM to start one |
 | *failed: NOT READY …* | A model, database or tool isn't available in this environment | Queue **Check the environment**: its report names the exact fix |
 | *ONTOLOGY FAIL* in the approval request | The document's header doesn't match the ontology (wrong type for the id, unknown subsystem, bad revision) | Fix the header (§12.4 step 1) and review again |
-| The document isn't in the list to review | It isn't in `work/inbox/`, or isn't a `.md` file | Put it there; the list refreshes |
+| The document isn't in the list to review | It isn't in `work/inbox/`, or isn't a markdown, Word (`.docx`, `.doc`) or picture file | Put it there; the list refreshes |
 | *Approve* is refused | It's no longer waiting (already decided), or the reviewer said *DO NOT INGEST* and the override box or note is missing | Read the message under the buttons |
 | *verification failed* | The document went in, but a check didn't pass | Read the verification report; if needed, have the ingest undone |
 | An answer says *MISSING* | The baseline lacks a document or test the question needs | That's the finding: §7 explains what to do |

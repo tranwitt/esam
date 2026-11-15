@@ -250,7 +250,8 @@ def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None
         if src and art_type.get(src) != "icd":
             out.append(Finding("error", f"interface {i}", f"source_artifact {src!r} is not an ICD in the baseline"))
     if documents_dir and documents_dir.exists():
-        for f in sorted(documents_dir.glob("*.md")):
+        from .readers import document_files
+        for f in document_files(documents_dir):
             if f.name not in listed_files:
                 out.append(Finding("warning", f.name, "file is in the documents folder but not listed in the baseline"))
     return out

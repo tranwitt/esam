@@ -72,8 +72,10 @@ def reject(run_id: str, by: str, note: str) -> dict:
 
 
 def choices() -> dict:
-    """Files an SE may queue: documents in the inbox (and lesson 06's staged ones), and briefs."""
+    """Files an SE may queue: documents in the inbox (and lesson 06's staged ones) in any
+    format the readers support (markdown, Word, pictures), and briefs."""
     rel = lambda p: str(p.relative_to(PROJECT_ROOT))  # noqa: E731
     staged = PROJECT_ROOT / "lessons" / "06_missing_document" / "staged"
-    docs = sorted(INBOX.glob("*.md")) + sorted(staged.glob("*.md"))
+    from .readers import document_files
+    docs = document_files(INBOX) + document_files(staged)
     return {"documents": [rel(p) for p in docs], "briefs": [rel(p) for p in sorted(BRIEFS.glob("*.yaml"))]}

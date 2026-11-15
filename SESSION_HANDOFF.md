@@ -15,7 +15,25 @@ Day-to-day restart steps for the user are in [`HOW_TO_START.md`](HOW_TO_START.md
    lesson or corpus before moving on.
 2. Bring the database back: `docker compose up -d --wait` (stopped at the end of the 2026-10-18
    session to save resources; data is kept in volume `esam-pgdata`).
-3. Sanity check: `source .venv/bin/activate && pytest -q` (expect 131 passed).
+3. Sanity check: `source .venv/bin/activate && pytest -q` (expect no failures; DB and CrewAI tests skip without them).
+
+### Session 2026-11-15: Word + picture ingestion, embeddings endpoint, fallback endpoints, Responses API
+
+Branch `feature/word-diagrams-endpoint-failover` (not merged).
+
+- **Documents**: `esamkit/readers.py` is the one way in. `.docx` and legacy `.doc` have built-in readers
+  (`word_docx.py`, `word_doc.py`); LibreOffice is used for `.doc`/`.rtf` when installed. Pictures become text
+  blocks (`diagrams.py`): vision model if `ESAM_VISION_MODEL` is set, else SVG labels / shape text / OCR.
+  Intake converts once at `receive`, reviews the markdown, keeps the original in `data/documents/originals/`.
+- **Embeddings**: `ESAM_EMBED_MODEL` + `ESAM_EMBED_BASE_URL` (old names still read). Endpoint client is stdlib.
+- **Models**: `esamkit/llm.py` (chat | responses | auto, fallbacks with cooldown); `crew/llm.py` `FailoverLLM`.
+- **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):
+  1. `tests/test_crew_llm.py` and a real crew run with fallbacks: run `pytest -q tests/test_crew_llm.py`
+     and `python -m crew.main env` in the crew venv first.
+  2. The DB-backed tests (`test_intake.py` bench, pgvector, graph) against the changed ingest/intake.
+  3. A `.doc` written by Microsoft Word itself. Fixtures are LibreOffice-written plus hand-built byte cases
+     (8-bit pieces, out-of-order pieces). Try a few real ones: `python -m esamkit.readers file.doc`.
+  4. A real vision model describing a real diagram.
 
 ### Session 2026-10-19 (afternoon): HTML edition of the SE User Manual
 

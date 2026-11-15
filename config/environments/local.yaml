@@ -20,13 +20,44 @@ llm:
       model: gpt-5.1
       base_url: https://api.openai.com/v1
       api_key_env: ESAM_CHAT_API_KEY
+      # Which API the endpoint speaks:
+      #   chat       POST <base_url>/chat/completions   (default)
+      #   responses  POST <base_url>/responses          (OpenAI's Responses API)
+      #   auto       chat first; responses on the same endpoint if chat fails
+      api: chat
+      # Endpoints tried in order when a call fails (unreachable, 404/405, 429,
+      # 5xx, rejected key, "API or model not supported here"). Each entry
+      # states only what differs from the lines above. Uncomment to use:
+      # fallbacks:
+      #   - api: responses                       # same endpoint and model, the Responses API
+      #   - base_url_env: ESAM_FALLBACK_URL      # another endpoint ...
+      #     api_key_env: ESAM_FALLBACK_KEY       # ... its key ...
+      #     model: gpt-5.1                       # ... and (optionally) another model or api
+    vision:                            # reads the diagrams in ingested documents (esamkit/diagrams.py).
+      model: gpt-5.1                   # Endpoint, key, api and fallbacks default to reasoning's.
+                                       # Set to null and no picture is ever sent to a model.
     code: null                         # no code-generation model here; pilot uses Nemotron
   pricing: null                        # {model: {input_per_1k: x, output_per_1k: y}}; fill with your own rates
+  # failover_cooldown_s: 300           # how long a failed endpoint is skipped before it is tried again
 
+# The embedding model: WHICH model, and WHERE it runs.
+#   model      the model. Local backend: its Hugging Face id. Endpoint: the name the endpoint serves.
+#   base_url   the URL of an OpenAI-compatible embeddings endpoint (https://<host>/v1). None = run locally.
+# On this profile both can be set without editing the file:
+#   ESAM_EMBED_MODEL=nomic-embed-text  ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
+# `python -m esamkit.environment` shows the model and URL in effect and checks them.
+# Changing the model means re-embedding everything (the store refuses to mix models).
 embeddings:
-  backend: local                       # local | openai | none
-  model_id: BAAI/bge-base-en-v1.5
-  model_dir: models/bge-base-en-v1.5
+  backend: auto                        # auto (endpoint if a URL is set, else local) | local | openai | none
+  model: BAAI/bge-base-en-v1.5
+  model_env: ESAM_EMBED_MODEL          # this variable, when set, overrides `model`
+  base_url_env: ESAM_EMBED_BASE_URL    # or write the URL here:  base_url: https://<host>/v1
+  api_key_env: ESAM_EMBED_API_KEY      # only if the endpoint wants a key
+  # model_dir: models/bge-base-en-v1.5 # local backend only; default is models/<last part of the model name>
+  # dimensions: 768                    # endpoint only: ask for shorter vectors (text-embedding-3-*)
+
+documents:
+  diagrams: auto                       # auto (vision model if one is set above, else local text) | local | off
 
 database:                              # PostgreSQL: vectors, graph tables, run log, usage
   backend: postgres                    # postgres | none

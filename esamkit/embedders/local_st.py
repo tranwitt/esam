@@ -18,43 +18,22 @@ import os
 from pathlib import Path
 
 from .base import Embedder
+from .prefixes import DOC_PREFIX, QUERY_PREFIX, family
 
-# Query instructions per model family. These come from each model's own
-# model card — they are part of how the model was trained, not decoration.
-#
-#   BGE v1.5 : instruction on the QUERY only, nothing on passages.
-#   E5       : "query: " on queries AND "passage: " on passages.
-#
-# Mixing them up (e.g. E5-style prefixes on a BGE model, as the earlier
-# embeddings.py did) still "works" — you get results — but quietly lowers
-# retrieval quality. Lesson 02 measures the difference.
-_QUERY_PREFIX = {
-    "bge": "Represent this sentence for searching relevant passages: ",
-    "e5": "query: ",
-}
-_DOC_PREFIX = {
-    "bge": "",
-    "e5": "passage: ",
-}
-
-
-def _family(model_id: str) -> str:
-    m = model_id.lower()
-    if "bge" in m:
-        return "bge"
-    if "e5" in m:
-        return "e5"
-    return "plain"  # e.g. all-MiniLM-L6-v2: symmetric, no prefixes
+# Query / passage prefixes per model family: see prefixes.py.
+_QUERY_PREFIX, _DOC_PREFIX, _family = QUERY_PREFIX, DOC_PREFIX, family
 
 
 class LocalSentenceTransformerEmbedder(Embedder):
     def __init__(self, model_dir: Path, model_id: str):
         if not Path(model_dir, "config.json").exists():
             raise FileNotFoundError(
-                f"No model found in {model_dir}.\n"
+                f"No model found in {model_dir} (ESAM_EMBED_MODEL={model_id}).\n"
                 "Stage it first (on a machine with internet):\n"
                 "    python lessons/00_setup/stage_model.py\n"
-                "then copy the esam/models/ folder to this machine."
+                "then copy the esam/models/ folder to this machine.\n"
+                "To use another model set ESAM_EMBED_MODEL (and ESAM_EMBED_MODEL_DIR if it is not\n"
+                "in models/<name>); to use an embeddings endpoint instead set ESAM_EMBED_BASE_URL."
             )
 
         # Must be set BEFORE importing sentence_transformers / transformers.

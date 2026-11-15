@@ -98,7 +98,7 @@ Collection 'esam_documents' was built with BAAI/bge-base-en-v1.5 (768-dim) but t
 embedder is BAAI/bge-small-en-v1.5 (384-dim). Vectors from different models cannot be compared...
 ```
 
-That's what happens if someone changes `ESAM_EMBED_MODEL_ID` without re-ingesting. You get an
+That's what happens if someone changes `ESAM_EMBED_MODEL` (or points `ESAM_EMBED_BASE_URL` at a different model) without re-ingesting. You get an
 error, not quietly wrong answers.
 
 ## Take-aways

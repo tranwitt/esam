@@ -12,6 +12,11 @@ the local Docker database to the pilot's VM-1 is just:
 
     ESAM_PG_DSN=postgresql://esam_user:***@<vm-1>:5432/esam_pilot
 
+The embedding model is chosen the same way, by MODEL and URL:
+
+    ESAM_EMBED_MODEL=<model>                 # which model
+    ESAM_EMBED_BASE_URL=https://<host>/v1    # where it runs; unset = locally, from disk
+
 Adding another vector database later = one new class implementing
 VectorStore (vectorstores/base.py) + one more branch below. Backend modules
 are imported lazily inside each branch, so you only install what you use.
@@ -29,8 +34,18 @@ def get_embedder(s: Settings = default_settings) -> Embedder:
         return LocalSentenceTransformerEmbedder(s.embed_model_dir, s.embed_model_id)
     if s.embed_backend == "openai":
         from .embedders.openai_compat import OpenAICompatEmbedder
-        return OpenAICompatEmbedder(s.openai_base_url, s.openai_api_key, s.openai_embed_model)
+        return OpenAICompatEmbedder(s.embed_base_url, s.embed_api_key, s.embed_model, s.embed_dimensions,
+                                    s.embed_batch_size, s.embed_query_prefix, s.embed_doc_prefix, s.llm_timeout)
     raise ValueError(f"Unknown ESAM_EMBED_BACKEND={s.embed_backend!r} (use 'local' or 'openai')")
+
+
+def embedder_identity(s: Settings = default_settings) -> str:
+    """The model id a collection embedded with these settings carries,
+    without loading or contacting the model."""
+    if s.embed_backend == "openai":
+        from .embedders.openai_compat import identity
+        return identity(s.embed_model, s.embed_dimensions)
+    return s.embed_model_id
 
 
 def get_vector_store(embedder: Embedder, s: Settings = default_settings,

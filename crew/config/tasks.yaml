@@ -44,10 +44,15 @@ a2_document_review:
     testable 'shall' with a measurable value, and flag any that is not. Use
     search_documents or verified_by only to confirm something in the
     document against an existing one; cite document ids. Report the tool's
-    issues list verbatim.
+    issues list verbatim. If the tool reports a conversion (the document
+    arrived as a Word file or a picture), say what it was converted from and
+    how, repeat every line of conversion_attention verbatim, and list each
+    picture with how it was read; never present a model's description of a
+    diagram as verified fact.
   expected_output: >
     A markdown review: a table per test case (or requirement) with the
-    comparison and verdict, the issues, and what remains untested.
+    comparison and verdict, the issues, what remains untested, and (for a
+    converted document) the conversion and its pictures.
   agent: researcher
 
 a2_approval_request:
@@ -56,6 +61,9 @@ a2_approval_request:
     {document} enters the baseline (run {run_id}). From the classification and
     the review: what was checked, what passed, what failed, and anything a human
     must decide. Do not repeat tables; summarise and point to the failures.
+    If the document was converted from a Word file or a picture, say so and
+    list what the SE must check against the original (the conversion
+    attention lines), because the baseline will hold the converted text.
     Recommend INGEST only if the ontology check is OK and no test case is WEAKER
     than its requirement (or no requirement is untestable); otherwise DO NOT
     INGEST, with the fix. Remind the SE that approval is theirs: they run

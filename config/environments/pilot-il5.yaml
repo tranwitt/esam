@@ -12,6 +12,13 @@ llm:
       model: gpt-5.1
       base_url_env: ESAM_GATEWAY_URL     # e.g. https://<gateway>/v1
       api_key_env: ESAM_GATEWAY_KEY
+      # api: chat | responses | auto, and fallbacks (see local.yaml):
+      # api: auto                          # chat, then the Responses API on the same gateway
+      # fallbacks:
+      #   - base_url_env: ESAM_GATEWAY_B_URL
+      #     api_key_env: ESAM_GATEWAY_B_KEY
+    # vision:                              # uncomment if the gateway model accepts pictures: it then
+    #   model: gpt-5.1                     # describes the diagrams in ingested documents
     code:                                # the only model approved for code generation
       model: nemotron-4-15b
       base_url_env: ESAM_GATEWAY_URL
@@ -22,6 +29,14 @@ embeddings:
   backend: local                         # pre-staged model weights (see the approval note in SESSION_HANDOFF)
   model_id: BAAI/bge-base-en-v1.5
   model_dir: models/bge-base-en-v1.5
+  # If the gateway gets an embeddings route, use it instead of local weights:
+  # backend: openai
+  # model: <the embedding model the gateway serves>
+  # base_url_env: ESAM_GATEWAY_URL
+  # api_key_env: ESAM_GATEWAY_KEY
+
+documents:
+  diagrams: local                        # no vision role above: pictures are read locally (SVG text, OCR) only
 
 database:
   backend: postgres
