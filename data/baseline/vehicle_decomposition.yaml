@@ -128,6 +128,9 @@ interfaces:
 # document_types.ssdd.attaches_to), e.g.:
 #   - { id: SSDD-LTV-001, name: "...", type: ssdd, revision: A, attached_to: V-001, file: SSDD-LTV-001.md }
 # (lessons/06_missing_document/staged/SSDD-LTV-001.md is one to ingest through Pipeline A.)
+# An owner may have several documents of one type. Parts of one document each get
+# their own id and say which part they are:
+#   - { id: SSDD-LTV-002, ..., attached_to: V-001, part: "2 of 3", file: SSDD-LTV-002.md }
 artifacts:
   - { id: ICD-BRK-001,  name: "Brake ECU J1939 Interface Control Document", type: icd,  revision: A, attached_to: SUB-BRK-ECU, file: ICD-BRK-001.md }
   - { id: SDD-BRK-001, name: "Brake Control ECU Software Design",          type: sdd, revision: A, attached_to: SUB-BRK-ECU, file: SDD-BRK-001.md }

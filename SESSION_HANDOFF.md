@@ -33,6 +33,9 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   *System-level documents* on the Dashboard (the coverage matrix stays per subsystem), in the owner's details on the
   Graph tab, and shows each type's *Attaches to* on the Ontology tab. Checked by running the page script against a
   stub DOM, not in a browser.
+- **Several documents of one type / parts**: `part: "n of N"` on a baseline entry (ontology v0.5), read from a
+  `Part` header column or `--set part=`. `esamkit.ontology.part_sets`; incomplete set = warning, duplicate part =
+  error. Cockpit and `check_coverage` list every document of a type. Tests: `tests/test_multipart.py`.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

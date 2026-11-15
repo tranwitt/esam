@@ -16,6 +16,7 @@ from typing import Any
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
+from esamkit.ontology import part_sets
 from esamkit.usage import UsageLedger
 
 
@@ -208,12 +209,23 @@ class CheckCoverageTool(WorkbenchTool):
         if not sub or sub["label"] != "Subsystem":
             return f"{subsystem_id} is not a subsystem in the graph."
         linked = any(subsystem_id in (e["from_eid"], e["to_eid"]) for e in snap["edges"] if e["type"] == "INTERFACES_WITH")
-        have = {V[e["to_eid"]]["props"].get("artifact_type"): e["to_eid"] for e in snap["edges"]
-                if e["type"] == "HAS_ARTIFACT" and e["from_eid"] == subsystem_id}
+        have: dict[str, list] = {}                # one subsystem may have several documents of a type (parts, or simply two)
+        for e in snap["edges"]:
+            if e["type"] == "HAS_ARTIFACT" and e["from_eid"] == subsystem_id:
+                p = V[e["to_eid"]]["props"]
+                have.setdefault(p.get("artifact_type"), []).append(
+                    f"{e['to_eid']} (part {p['part']})" if p.get("part") else e["to_eid"])
+        incomplete = {ps["type"]: ps["missing"] for ps in part_sets(
+            [{"id": e["to_eid"], "type": V[e["to_eid"]]["props"].get("artifact_type"), "attached_to": subsystem_id,
+              "part": V[e["to_eid"]]["props"].get("part")}
+             for e in snap["edges"] if e["type"] == "HAS_ARTIFACT" and e["from_eid"] == subsystem_id]) if ps["missing"]}
         req = wb.onto.required_documents(sub["props"], linked)
         return _dump({"subsystem": subsystem_id, "name": sub["props"].get("name"),
                       "safety_critical": sub["props"].get("safety_critical"),
-                      "required": {t: {"present": have.get(t) or "MISSING", "why": why} for t, why in req.items()},
+                      "required": {t: {"present": (sorted(have[t])[0] if len(have[t]) == 1 else sorted(have[t]))
+                                              if have.get(t) else "MISSING",
+                                              **({"parts_missing": incomplete[t]} if t in incomplete else {}),
+                                              "why": why} for t, why in req.items()},
                       "untested_requirements": [r["eid"] for r in wb.graph.untested_requirements()
                                                 if r["subsystem"] == subsystem_id]})
 

@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.4"
+  version: "0.5"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -136,6 +136,12 @@ classes:
       # Subsystem unless the document's type says otherwise (document_types.<type>.attaches_to).
       attached_to: { type: ref, class: Subsystem, required: true }
       file: { type: text, required: true }
+      # A document delivered in several parts (volumes): each part is its own
+      # document with its own id (SSDD-LTV-001, SSDD-LTV-002, ...), the same
+      # type and the same attached_to, and says which part it is. One owner
+      # may also simply have several documents of one type (two ICDs): those
+      # leave `part` out.
+      part: { type: text, pattern: '^[1-9]\d? of [1-9]\d?$', description: "Which part of a multi-part document this is, e.g. '2 of 3'" }
   # Requirements and test cases are read out of the documents (SRS and STD),
   # not written in the baseline: esamkit/traceability.py. Each records the
   # document it came from, so a new revision replaces what the old one gave.

@@ -144,6 +144,24 @@ What the document must state (SE manual §2.5): a title line `# <ID> — <name>`
 `| Document | Type | Revision | Subsystem |`. Missing fields are ontology findings; the SE can supply them
 with `--set revision=A --set attached_to=SUB-…`.
 
+**Several documents of one type; documents in parts.** A subsystem (or the vehicle, for an SSDD) may have more
+than one document of a type. Each is its own baseline entry with its own id (`SSDD-LTV-001`, `SSDD-LTV-002`, …;
+ids run 001–009 per type and owner code) and is reviewed, approved, ingested and undone on its own: a document
+replaces another only when it has the **same id** at a later revision. When they are parts of one document,
+each says which part it is with a `Part` column in its header table (`2 of 3`), or `--set part="2 of 3"`:
+
+```
+| Document | Type | Revision | System | Part |
+|---|---|---|---|---|
+| SSDD-LTV-002 | SSDD | A | V-001 | 2 of 3 |
+```
+
+The ontology check then knows the set: a missing part is a warning (parts can arrive in any order, and the
+approval request says which are still missing), two documents claiming the same part is an error. Requirements
+split over several SRS parts all land on the subsystem. The required-documents rules are met by any document of
+the type; an incomplete set shows as a warning in health check 5 and beside the document in the Cockpit.
+Documents without `part` (two ICDs for one ECU) are simply two documents.
+
 **System-level documents (SSDD).** Every document type is attached to a subsystem except the SSDD, which the
 ontology lets sit on the vehicle system, one system or a subsystem (`document_types.ssdd.attaches_to:
 [Vehicle, System, Subsystem]` in `data/ontology/esam_ontology.yaml`). The last header column then holds

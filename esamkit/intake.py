@@ -39,7 +39,7 @@ from .config import Settings, settings as default_settings
 from .embedders.base import Embedder
 from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
-from .ontology import Ontology, check_baseline, find_node
+from .ontology import Ontology, check_baseline, find_node, part_sets
 from .readers import PICTURES, convert
 from .traceability import load_traceability, read_requirements, read_test_cases
 from .vectorstores.base import VectorStore
@@ -109,7 +109,8 @@ def read_header(text: str) -> dict:
     `# <ID> — <name>` and the `| Document | Type | Revision | Subsystem |` table.
     The last column is what the document is attached to; for a system-level
     document (an SSDD on V-001 or SYS-…) it may be headed System, Vehicle or
-    Attached to instead.
+    Attached to instead. A document that is one part of several adds a Part
+    column: `2 of 3`.
     Fields it doesn't state are left out (the ontology check reports them)."""
     entry: dict = {}
     lines = text.splitlines()
@@ -123,9 +124,11 @@ def read_header(text: str) -> dict:
             values = [c.strip() for c in lines[i + 2].strip().strip("|").split("|")]
             row = dict(zip(cells, values))
             entry.setdefault("id", row.get("document", ""))
-            for key, cols in (("type", ("type",)), ("revision", ("revision",)), ("attached_to", _OWNER_COLUMNS)):
+            for key, cols in (("type", ("type",)), ("revision", ("revision",)), ("attached_to", _OWNER_COLUMNS),
+                              ("part", ("part", "volume"))):
                 if value := next((row[c] for c in cols if row.get(c)), None):
-                    entry[key] = value.lower() if key == "type" else value
+                    entry[key] = (value.lower() if key == "type"
+                                  else re.sub(r"\s*(?:of|/)\s*", " of ", value.strip().lower()) if key == "part" else value)
             break
     if entry.get("id"):
         entry.setdefault("type", entry["id"].split("-")[0].lower())   # the ontology ties type to the id prefix
@@ -162,6 +165,12 @@ def ontology_check(onto: Ontology, baseline_yaml: Path, entry: dict) -> dict:
         required = onto.required_documents({**subsystem, "safety_critical": subsystem.get("safety_critical") is True},
                                            has_ifaces)
     dtype = onto.document_types.get(entry.get("type", ""), {})
+    # Other documents of this type on the same owner: this one is in addition to them, not a replacement.
+    same = lambda a: (str(a.get("type", "")).lower() == str(entry.get("type", "")).lower()        # noqa: E731
+                      and a.get("attached_to") == entry.get("attached_to"))
+    siblings = [{"id": a.get("id"), "name": a.get("name"), "revision": a.get("revision"), "part": a.get("part")}
+                for a in arts if a is not current and same(a)]
+    part_set = next((ps for ps in part_sets(data["artifacts"]) if entry.get("part") and same(ps)), None)
     return {"entry": entry, "findings": findings,
             "ok": not any(f["level"] == "error" for f in findings),
             "replaces_revision": current.get("revision") if current else None,
@@ -171,6 +180,10 @@ def ontology_check(onto: Ontology, baseline_yaml: Path, entry: dict) -> dict:
             "subsystem": {"id": entry.get("attached_to"), "name": (owner or {}).get("name"), "class": owner_class,
                           "safety_critical": bool((subsystem or {}).get("safety_critical"))},
             "may_attach_to": onto.attach_classes(entry.get("type")),
+            "same_type_documents": siblings,
+            "part": ({"this": entry.get("part"), "total": part_set["total"],
+                      "present_after_ingest": part_set["documents"], "still_missing": part_set["missing"]}
+                     if part_set else None),
             "required_by_rules": required.get(entry.get("type", ""), []),
             "subsystem_requires": list(required)}
 
@@ -229,9 +242,9 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
 # ── A3 ───────────────────────────────────────────────────────────────────────
 
 def baseline_line(entry: dict) -> str:
-    keys = ("id", "name", "type", "revision", "attached_to", "file")
+    keys = ("id", "name", "type", "revision", "attached_to", "part", "file")
     parts = [f"{k}: {yaml.safe_dump(entry[k], default_flow_style=True, width=1000).strip().removesuffix('...').strip()}"
-             if k == "name" else f"{k}: {entry[k]}" for k in keys if k in entry]
+             if k == "name" else f'{k}: "{entry[k]}"' if k == "part" else f"{k}: {entry[k]}" for k in keys if k in entry]
     return "  - { " + ", ".join(parts) + " }"
 
 

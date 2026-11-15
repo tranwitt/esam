@@ -553,10 +553,26 @@ const requiredOf = (eid) => {
   const req = M.data.required;
   return req ? Object.keys(req[eid] || {}) : (M.data.doc_types || []);
 };
+const partOf = (d) => { const m = /^(\d+) of (\d+)$/.exec(d.props.part || ""); return m ? [Number(m[1]), Number(m[2])] : null; };
+const docsOfType = (owner, t) => (M.docsOf.get(owner) || []).filter((d) => (d.props.artifact_type || "").toLowerCase() === t)
+  .sort((a, b) => (partOf(a)?.[0] ?? 0) - (partOf(b)?.[0] ?? 0) || a.eid.localeCompare(b.eid));
+function missingParts(docs) {
+  const parts = docs.map(partOf).filter(Boolean);
+  if (!parts.length) return [];
+  const total = Math.max(...parts.map((p) => p[1])), have = new Set(parts.map((p) => p[0]));
+  return Array.from({ length: total }, (_, i) => i + 1).filter((n) => !have.has(n));
+}
 function docState(sub, t) {
   const sc = !!sub.props.safety_critical, required = requiredOf(sub.eid).includes(t);
-  const doc = (M.docsOf.get(sub.eid) || []).find((d) => (d.props.artifact_type || "").toLowerCase() === t);
-  if (doc) return h("span.state.have", {}, "✓ ", nodeLink(doc.eid));
+  // a subsystem may have several documents of one type: parts of one document ("2 of 3"), or simply two of them
+  const docs = docsOfType(sub.eid, t);
+  if (docs.length) {
+    const gap = missingParts(docs);
+    return h("span.state.have", {}, "✓ ", docs.flatMap((d, i) => [i ? ", " : null, nodeLink(d.eid),
+      d.props.part ? h("span.note", {}, ` part ${d.props.part}`) : null]),
+      gap.length ? h("span.state.miss" + (sc ? ".sc" : ""), { title: "Parts of this document that are not in the baseline" },
+        ` part${gap.length > 1 ? "s" : ""} ${gap.join(", ")} missing`) : null);
+  }
   if (!required) return h("span.state.na", { title: "No rule requires this document type for this subsystem" }, "not required");
   const why = ((M.data.required || {})[sub.eid] || {})[t] || [];
   return h("span.state.miss" + (sc ? ".sc" : ""), { title: why.join(" ") }, "missing");
@@ -631,7 +647,8 @@ function systemLevelDocs() {
     .flatMap(([owner, docs]) => docs.map((doc) => ({ doc, owner: M.byId.get(owner) })))
     .sort((a, b) => rank(a.owner) - rank(b.owner)
       || String(a.owner.props.wbs_code || "").localeCompare(String(b.owner.props.wbs_code || ""), undefined, { numeric: true })
-      || a.doc.eid.localeCompare(b.doc.eid));
+      || (a.doc.props.artifact_type || "").localeCompare(b.doc.props.artifact_type || "")
+      || (partOf(a.doc)?.[0] ?? 0) - (partOf(b.doc)?.[0] ?? 0) || a.doc.eid.localeCompare(b.doc.eid));
 }
 function renderSystemLevel() {
   const types = Object.keys(M.data.ontology?.data?.document_types || {})
@@ -642,12 +659,15 @@ function renderSystemLevel() {
     + (allowed ? `The ontology allows this for: ${allowed}.` : "The ontology allows no document type above a subsystem.")
     + (rows.length ? "" : " None in the baseline yet.");
   if (!rows.length) { $("#syslevel").replaceChildren(); return; }
-  const head = h("tr", {}, ["Document", "Type", "Rev", "Attached to", "WBS"].map((x) => h("th", {}, x)));
+  const head = h("tr", {}, ["Document", "Type", "Part", "Rev", "Attached to", "WBS"].map((x) => h("th", {}, x)));
   $("#syslevel").replaceChildren(h("thead", {}, head), h("tbody", {}, rows.map(({ doc, owner }) => {
     const t = (doc.props.artifact_type || "").toLowerCase();
     return h("tr", {},
       h("td", {}, h("div.who", {}, h("span", {}, doc.props.name || ""), nodeLink(doc.eid))),
       h("td.cell", { title: (M.data.doc_type_names || {})[t] || "" }, t.toUpperCase()),
+      h("td.cell", {}, doc.props.part || h("span.note", {}, "—"), (() => {
+        const gap = doc.props.part ? missingParts(docsOfType(owner.eid, t)) : [];
+        return gap.length ? h("span.state.miss", {}, ` part${gap.length > 1 ? "s" : ""} ${gap.join(", ")} missing`) : null; })()),
       h("td.cell.mono", {}, doc.props.revision || ""),
       h("td", {}, h("div.who", {}, h("span", {}, chip(owner), " ", owner.props.name || ""), nodeLink(owner.eid))),
       h("td.cell.mono", {}, owner.props.wbs_code || ""));
@@ -1031,7 +1051,7 @@ function renderDetails() {
   if (v.label !== "Subsystem" && v.label !== "DesignArtifact" && (M.docsOf.get(v.eid) || []).length) {
     parts.push(h("h4", {}, "Documents"), h("ul", {}, M.docsOf.get(v.eid).map((d) => h("li", {},
       h("span.mono", {}, (d.props.artifact_type || "").toUpperCase().padEnd(5, " ")), " ", h("span.state.have", {}, "✓ ", nodeLink(d.eid)),
-      " ", h("span.note", {}, d.props.name || "")))));
+      " ", h("span.note", {}, (d.props.part ? `part ${d.props.part} · ` : "") + (d.props.name || ""))))));
   }
   if (v.label === "DesignArtifact") {
     const owner = ownerOf(v);

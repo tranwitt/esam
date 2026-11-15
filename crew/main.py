@@ -194,8 +194,8 @@ def _parse_sets(pairs: list[str]) -> dict:
     out = {}
     for pair in pairs or []:
         key, _, value = pair.partition("=")
-        if key not in ("id", "name", "type", "revision", "attached_to") or not value:
-            sys.exit(f"--set {pair!r}: use id=, name=, type=, revision= or attached_to=")
+        if key not in ("id", "name", "type", "revision", "attached_to", "part") or not value:
+            sys.exit(f"--set {pair!r}: use id=, name=, type=, revision=, attached_to= or part= (e.g. part='2 of 3')")
         out[key] = value
     return out
 

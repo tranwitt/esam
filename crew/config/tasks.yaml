@@ -27,7 +27,11 @@ a1_ontology_check:
     before this one. A system-level document (an SSDD) may instead be attached
     to the vehicle system (V-...) or to one system (SYS-...): the tool result's
     subsystem.class says which. Then say what it is attached to, and skip
-    check_coverage, which is only for subsystems. Use ontology_lookup when a term needs explaining. Report
+    check_coverage, which is only for subsystems. An owner may have several
+    documents of one type: when the tool result lists same_type_documents, say
+    that this document is in addition to them (it replaces one only when it
+    has the same id). When the result has a part, say which part this is, which
+    parts will be present after ingestion and which are still missing. Use ontology_lookup when a term needs explaining. Report
     every ontology finding verbatim; an error means the document cannot be
     ingested as it stands, and you name the field to fix.
   expected_output: >

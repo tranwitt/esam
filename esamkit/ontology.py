@@ -206,6 +206,54 @@ def _check_node(onto: Ontology, cname: str, node: dict, parent: dict | None, see
     return out
 
 
+_PART = re.compile(r"^([1-9]\d?) of ([1-9]\d?)$")
+
+
+def part_sets(artifacts: list[dict]) -> list[dict]:
+    """Multi-part documents among the baseline's artifacts. Parts of one
+    document share a type and an owner and each carries `part: "n of N"`.
+    [{type, attached_to, total, totals, present: {n: [ids]}, missing: [n], documents: [ids]}]"""
+    groups: dict[tuple, list[tuple[int, int, str]]] = {}
+    for art in artifacts or []:
+        m = _PART.match(str(art.get("part") or ""))
+        if m:
+            groups.setdefault((str(art.get("type", "")).lower(), art.get("attached_to")), []).append(
+                (int(m[1]), int(m[2]), art.get("id", "?")))
+    out = []
+    for (dtype, owner), parts in sorted(groups.items(), key=lambda kv: (kv[0][0], str(kv[0][1]))):
+        totals = sorted({t for _, t, _ in parts})
+        total = max(totals)
+        present: dict[int, list[str]] = {}
+        for n, _, aid in sorted(parts):
+            present.setdefault(n, []).append(aid)
+        out.append({"type": dtype, "attached_to": owner, "total": total, "totals": totals, "present": present,
+                    "missing": [n for n in range(1, total + 1) if n not in present],
+                    "documents": [aid for _, _, aid in sorted(parts)]})
+    return out
+
+
+def _check_parts(artifacts: list[dict]) -> list[Finding]:
+    out = []
+    for art in artifacts or []:
+        m = _PART.match(str(art.get("part") or ""))
+        if m and int(m[1]) > int(m[2]):
+            out.append(Finding("error", art.get("id", "?"), f"part = {art['part']!r}: the part number is larger than the number of parts"))
+    for ps in part_sets(artifacts):
+        where = f"{ps['type'].upper()} for {ps['attached_to']}"
+        for n, ids in ps["present"].items():
+            if len(ids) > 1:
+                out.append(Finding("error", where, f"part {n} is claimed by more than one document: {', '.join(ids)}"))
+        if len(ps["totals"]) > 1:
+            out.append(Finding("warning", where, "its parts disagree on how many parts there are "
+                                                 f"({', '.join(str(t) for t in ps['totals'])}): {', '.join(ps['documents'])}"))
+        if ps["missing"]:
+            out.append(Finding("warning", where, f"part{'s' if len(ps['missing']) > 1 else ''} "
+                                                 f"{', '.join(str(n) for n in ps['missing'])} of {ps['total']} "
+                                                 f"{'are' if len(ps['missing']) > 1 else 'is'} not in the baseline "
+                                                 f"(have: {', '.join(ps['documents'])})"))
+    return out
+
+
 def _one_of(names: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
 
@@ -278,6 +326,7 @@ def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None
             listed_files.add(art["file"])
             if documents_dir and not (documents_dir / art["file"]).exists():
                 out.append(Finding("error", aid, f"file {art['file']!r} is listed but not in {documents_dir.name}/"))
+    out += _check_parts(arts)
     for i, iface in enumerate(data.get("interfaces") or [], 1):
         src = iface.get("source_artifact")
         if src and art_type.get(src) != "icd":

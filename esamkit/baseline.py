@@ -71,6 +71,7 @@ class Baseline:
                 "revision": art.get("revision", ""),
                 "subsystem_id": owner,                      # the owner: a subsystem, or the vehicle / a system for an SSDD
                 "owner_class": self.vertex(owner).label,
+                **({"part": str(art["part"])} if art.get("part") else {}),
                 "wbs_code": self.vertex(system).props.get("wbs_code", ""),
             }
         return index
@@ -129,7 +130,8 @@ def load_baseline(path: Path) -> Baseline:
     for art in data.get("artifacts", []):
         vertices.append(Vertex("DesignArtifact", {
             "id": art["id"], "name": art["name"], "artifact_type": art["type"],
-            "revision": art.get("revision", ""), "file": art["file"]}))
+            "revision": art.get("revision", ""), "file": art["file"],
+            **({"part": str(art["part"])} if art.get("part") else {})}))      # "2 of 3": one part of a multi-part document
         edges.append(Edge(art["attached_to"], art["id"], "HAS_ARTIFACT",
                           {"artifact_type": art["type"]}))
 
