@@ -27,6 +27,9 @@ ESAM crew runner.
     python -m crew.main tasks list | show <id> | cancel <id> | requeue <id>
     python -m crew.main worker [--once]
 
+    # The graph (derived from the baseline and its documents): rebuild or empty it. No agent, no model.
+    python -m crew.main graph status | reload | reset --yes
+
     # Interactive: a question answered by the three agents
     python -m crew.main ask "Which brake requirements have no test?"
 
@@ -56,6 +59,7 @@ sys.path.insert(0, str(ROOT))
 from esamkit.environment import apply_telemetry, inspect, load_profile, resolve  # noqa: E402
 from esamkit.usage import UsageLedger  # noqa: E402
 
+from crew import graph_admin  # noqa: E402
 from crew.terminal_log import logged  # noqa: E402
 
 RUNS = ROOT / "work" / "runs"
@@ -347,6 +351,11 @@ def cmd_undo(args) -> int:
     return 0
 
 
+def cmd_graph(args) -> int:
+    """Reload or reset the graph (crew/graph_admin.py). Not a pipeline: no agent, no model, no run folder."""
+    return graph_admin.run(args)
+
+
 @logged("author", LAST_RUN, LOGS)
 def cmd_author(args) -> int:
     from crew.custom_tools import _authoring, build_pack
@@ -577,6 +586,8 @@ def main() -> None:
     w.add_argument("--kinds", nargs="*", help="only these kinds")
     b = add("author", cmd_author, "Pipeline B: draft an SRS from an SE's brief, verified, with an evidence pack")
     b.add_argument("brief")
+    g = add("graph", cmd_graph, "the graph: status, reload (rebuild from the baseline), reset (empty it)")
+    graph_admin.add_arguments(g)
     a = add("ask", cmd_ask, "answer a question with the three agents")
     a.add_argument("question")
     args = ap.parse_args()

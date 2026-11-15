@@ -26,6 +26,10 @@ python -m esamkit.standards                         # the standards library
 python -m esamkit.standards show "MIL-STD-882E 4.4.2"
 python -m crew.main author data/briefs/SRS-ENG-001.yaml   # Pipeline B → work/drafts/
 
+python -m crew.main graph status                    # is the graph in step with the baseline?
+python -m crew.main graph reload                    # rebuild the graph from the baseline and its documents
+python -m crew.main graph reset --yes               # empty the graph
+
 python -m crew.main tasks add review work/inbox/STD-BRK-001.md     # queue work in PostgreSQL
 python -m crew.main tasks list
 python -m crew.main worker [--once | --drain]                     # process the list
@@ -94,6 +98,23 @@ end of it. A fallback whose URL or key variable is unset is left out and reporte
 The shipped profiles have fallbacks commented out: nothing changes until you add them.
 
 The `vision` role (describing picture diagrams) uses the reasoning role's endpoint unless given its own.
+
+## The graph: status, reload, reset
+
+The graph is derived: its structure comes from the baseline, its requirements and test cases from the SRS and
+STD documents the baseline lists. `crew/graph_admin.py` rebuilds or empties it without an agent, a model or
+the lessons folder (it replaces `lessons/04_graph/load_graph.py --reset` for day-to-day use).
+
+| Command | Does |
+|---|---|
+| `graph status` | Counts by kind, and whether the graph holds exactly what the baseline and documents say; lists what is missing or extra. Exit code 1 when out of step |
+| `graph reload` | Reads and checks everything first (the baseline loads, passes the ontology check, documents are readable), then empties the graph and loads it. A baseline with errors is refused and the graph is left as it was; `--force` loads one that only fails the ontology check |
+| `graph reset --yes` | Empties the graph and leaves it empty until the next `reload` |
+
+Use `reload` after editing the baseline by hand, after a `git checkout`, after restoring a database, or when
+health check 5 says "reload the graph". None of the three touches the baseline, the documents or the search
+store. All take `--env <profile>`; `python -m crew.graph_admin …` is the same without the crew's other
+dependencies.
 
 ## Step 1: Pipeline A (a document → verified ingestion)
 

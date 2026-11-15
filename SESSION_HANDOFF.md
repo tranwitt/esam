@@ -33,6 +33,8 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   *System-level documents* on the Dashboard (the coverage matrix stays per subsystem), in the owner's details on the
   Graph tab, and shows each type's *Attaches to* on the Ontology tab. Checked by running the page script against a
   stub DOM, not in a browser.
+- **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
+  `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):
   1. `tests/test_crew_llm.py` and a real crew run with fallbacks: run `pytest -q tests/test_crew_llm.py`
      and `python -m crew.main env` in the crew venv first.
