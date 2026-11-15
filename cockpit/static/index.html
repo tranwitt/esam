@@ -84,6 +84,7 @@ main .wrap { padding-block: 20px 40px; }
 
 .panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; margin-bottom: 18px; min-width: 0; }
 .panel h2 { font: 600 15px var(--f-display); letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; }
+.panel h3.subhead { font: 600 13px var(--f-display); letter-spacing: 0.05em; text-transform: uppercase; margin: 18px 0 4px; }
 .panel .sub { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; max-width: 72ch; }
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -344,6 +345,9 @@ footer { color: var(--ink-2); font-size: 12px; }
           A missing document on a safety-critical subsystem is shown in red.</p>
         <div class="scroll"><table id="coverage"></table></div>
         <div class="rules" id="rules"></div>
+        <h3 class="subhead">System-level documents</h3>
+        <p class="sub" id="syslevel-note"></p>
+        <div class="scroll"><table id="syslevel"></table></div>
       </div>
       <div class="panel">
         <h2>Interfaces</h2>
@@ -600,6 +604,7 @@ function renderDashboard() {
     h("ol", {}, rules.map((r) => h("li", {}, "When ", h("b", {}, r.when.map((c) => c.replace(/_/g, " ")).join(" + ")),
       " → ", h("b", {}, r.require.map((t) => t.toUpperCase()).join(", ")), r.why ? ` · ${r.why}` : "")))] : []));
 
+  renderSystemLevel();
   renderTrace();
   renderHealth();
   const ihead = h("tr", {}, ["From", "To", "Message", "Status", "Source document", "Notes"].map((x) => h("th", {}, x)));
@@ -611,6 +616,42 @@ function renderDashboard() {
     h("td.cell", {}, e.props.source_artifact && byId.has(e.props.source_artifact) ? nodeLink(e.props.source_artifact) : h("span.note", {}, "none")),
     h("td", {}, h("span.note", {}, e.props.notes || ""))));
   $("#interfaces").replaceChildren(h("thead", {}, ihead), h("tbody", {}, irows));
+}
+
+// ── Dashboard: documents attached above the subsystems ──────────────────────
+// Most documents belong to a subsystem and sit in the coverage table. A
+// document type whose ontology entry has `attaches_to` (the SSDD) may belong
+// to the vehicle system or to one system: those are listed here.
+const attachClasses = (t) => ((M.data.ontology?.data?.document_types || {})[t] || {}).attaches_to || ["Subsystem"];
+const className = (c) => (TYPES[c]?.name || c).toLowerCase();
+const ownerOf = (doc) => M.byId.get(M.parent.get(doc.eid));
+function systemLevelDocs() {
+  const rank = (v) => TYPES[v.label]?.rank ?? 9;
+  return [...M.docsOf].filter(([owner]) => M.byId.get(owner)?.label !== "Subsystem")
+    .flatMap(([owner, docs]) => docs.map((doc) => ({ doc, owner: M.byId.get(owner) })))
+    .sort((a, b) => rank(a.owner) - rank(b.owner)
+      || String(a.owner.props.wbs_code || "").localeCompare(String(b.owner.props.wbs_code || ""), undefined, { numeric: true })
+      || a.doc.eid.localeCompare(b.doc.eid));
+}
+function renderSystemLevel() {
+  const types = Object.keys(M.data.ontology?.data?.document_types || {})
+    .filter((t) => attachClasses(t).some((c) => c !== "Subsystem"));
+  const allowed = types.map((t) => `${t.toUpperCase()} (${attachClasses(t).map(className).join(", ")})`).join("; ");
+  const rows = systemLevelDocs();
+  $("#syslevel-note").textContent = "Documents attached to the vehicle system or to one system, not to a subsystem. "
+    + (allowed ? `The ontology allows this for: ${allowed}.` : "The ontology allows no document type above a subsystem.")
+    + (rows.length ? "" : " None in the baseline yet.");
+  if (!rows.length) { $("#syslevel").replaceChildren(); return; }
+  const head = h("tr", {}, ["Document", "Type", "Rev", "Attached to", "WBS"].map((x) => h("th", {}, x)));
+  $("#syslevel").replaceChildren(h("thead", {}, head), h("tbody", {}, rows.map(({ doc, owner }) => {
+    const t = (doc.props.artifact_type || "").toLowerCase();
+    return h("tr", {},
+      h("td", {}, h("div.who", {}, h("span", {}, doc.props.name || ""), nodeLink(doc.eid))),
+      h("td.cell", { title: (M.data.doc_type_names || {})[t] || "" }, t.toUpperCase()),
+      h("td.cell.mono", {}, doc.props.revision || ""),
+      h("td", {}, h("div.who", {}, h("span", {}, chip(owner), " ", owner.props.name || ""), nodeLink(owner.eid))),
+      h("td.cell.mono", {}, owner.props.wbs_code || ""));
+  })));
 }
 
 // ── Dashboard: health report ─────────────────────────────────────────────────
@@ -728,10 +769,11 @@ function renderOntology() {
 
   const required = new Set(M.data.doc_types || []);
   const sections = [];
-  sections.push(ontoPanel("documents", "Document types", "The kinds of documents ESAM knows. Question words and synonyms are how ESAM tells which document a question needs.",
-    ontoTable(["Code", "Name", "Standard", "Used by rules", "Question words", "Synonyms"],
+  sections.push(ontoPanel("documents", "Document types", "The kinds of documents ESAM knows. Attaches to is what a document of that type may belong to. Question words and synonyms are how ESAM tells which document a question needs.",
+    ontoTable(["Code", "Name", "Standard", "Attaches to", "Used by rules", "Question words", "Synonyms"],
       Object.entries(d.document_types || {}).map(([k, t]) => h("tr", {},
         h("td.mono-cell", {}, k.toUpperCase()), h("td", {}, t.name || ""), h("td", {}, h("span.note", {}, t.standard || "")),
+        h("td", {}, tags(t.attaches_to || ["Subsystem"])),
         h("td.cell", {}, required.has(k) ? h("span.tag.on", {}, "yes") : h("span.note", {}, "no")),
         h("td", {}, tags(t.answers)), h("td", {}, tags(t.synonyms)))))));
   sections.push(ontoPanel("rules", "Rules", "What each kind of subsystem must have. A subsystem must have every document required by every rule that applies to it.",
@@ -986,7 +1028,15 @@ function renderDetails() {
     parts.push(h("h4", {}, "Verifies"), h("ul", {}, outs.map((e) => h("li", {}, nodeLink(e.to_eid), " ", h("span.note", {}, M.byId.get(e.to_eid)?.props.name || ""))),
       missing.map((r) => h("li", {}, h("span.state.miss", {}, `${r}: no such requirement`)))));
   }
+  if (v.label !== "Subsystem" && v.label !== "DesignArtifact" && (M.docsOf.get(v.eid) || []).length) {
+    parts.push(h("h4", {}, "Documents"), h("ul", {}, M.docsOf.get(v.eid).map((d) => h("li", {},
+      h("span.mono", {}, (d.props.artifact_type || "").toUpperCase().padEnd(5, " ")), " ", h("span.state.have", {}, "✓ ", nodeLink(d.eid)),
+      " ", h("span.note", {}, d.props.name || "")))));
+  }
   if (v.label === "DesignArtifact") {
+    const owner = ownerOf(v);
+    if (owner) parts.push(h("h4", {}, "Attached to"),
+      h("p", {}, chip(owner), " ", nodeLink(owner.eid), " ", h("span.note", {}, owner.props.name || "")));
     const usedBy = M.ifaces.filter((e) => e.props.source_artifact === v.eid);
     if (usedBy.length) parts.push(h("h4", {}, "Defines interfaces"),
       h("ul", {}, usedBy.map((e) => h("li", {}, nodeLink(e.from_eid), " → ", nodeLink(e.to_eid), " ", h("span.mono", {}, shortMsg(e.props.message))))));

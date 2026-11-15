@@ -29,8 +29,10 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
 - **Models**: `esamkit/llm.py` (chat | responses | auto, fallbacks with cooldown); `crew/llm.py` `FailoverLLM`.
 - **SSDD on the vehicle system**: `document_types.ssdd.attaches_to: [Vehicle, System, Subsystem]` (ontology v0.4);
   `HAS_ARTIFACT` may start from Vehicle or System. Sample: `lessons/06_missing_document/staged/SSDD-LTV-001.md`
-  (attached to V-001; not added to the baseline). Tests: `tests/test_ssdd.py`. The Cockpit Dashboard matrix is still
-  per subsystem, so a vehicle-level SSDD shows on the Graph tab only.
+  (attached to V-001; not added to the baseline). Tests: `tests/test_ssdd.py`. The Cockpit lists such documents under
+  *System-level documents* on the Dashboard (the coverage matrix stays per subsystem), in the owner's details on the
+  Graph tab, and shows each type's *Attaches to* on the Ontology tab. Checked by running the page script against a
+  stub DOM, not in a browser.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):
   1. `tests/test_crew_llm.py` and a real crew run with fallbacks: run `pytest -q tests/test_crew_llm.py`
      and `python -m crew.main env` in the crew venv first.

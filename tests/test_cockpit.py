@@ -166,3 +166,9 @@ def test_run_files_are_served_only_from_run_folders(client, runs_dir):
 def test_page_has_the_tasks_tab():
     page = render_page()
     assert 'id="tab-tasks"' in page and 'id="task-form"' in page and "renderTasks" in page
+
+
+def test_page_lists_system_level_documents():
+    # an SSDD attached to the vehicle system or a system is not a row of the per-subsystem table
+    page = render_page()
+    assert 'id="syslevel"' in page and "renderSystemLevel" in page and '"Attaches to"' in page
