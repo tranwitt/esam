@@ -47,6 +47,9 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `User-Agent: ESAM/1.0` (not `Python-urllib`); two retries on passing failures; `.env` values may be followed by
   `# comment`. Still different from main on purpose: no `Authorization` header when no key is set (the SDK sent
   `Bearer unused`), and BGE/E5 models served by an endpoint get their query/passage prefixes.
+- **Embeddings URL is the full address**: `ESAM_EMBED_BASE_URL` (and the older `ESAM_OPENAI_BASE_URL`, and
+  `embeddings.base_url` in a profile) is POSTed to exactly as written; `/embeddings` is no longer appended. A value
+  ending in `/v1` must become `/v1/embeddings` (a 404/405 says so). Chat/Responses URLs are unchanged (still a base URL).
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

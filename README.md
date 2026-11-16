@@ -140,7 +140,7 @@ Two settings decide it (`.env`, or the environment):
 | Setting | Meaning | Default |
 |---|---|---|
 | `ESAM_EMBED_MODEL` | **which model**: a Hugging Face id when it runs locally, or the name the endpoint serves | `BAAI/bge-base-en-v1.5` |
-| `ESAM_EMBED_BASE_URL` | **where it runs**: the URL of an OpenAI-compatible embeddings endpoint (ESAM posts to `<URL>/embeddings`). Unset = on this machine, from `models/` | unset |
+| `ESAM_EMBED_BASE_URL` | **where it runs**: the **full** URL of an OpenAI-compatible embeddings endpoint, e.g. `https://host/v1/embeddings`. It is used exactly as written; nothing is appended. Unset = on this machine, from `models/` | unset |
 | `ESAM_EMBED_API_KEY` | the endpoint's key, if it wants one | unset |
 
 ```bash
@@ -148,7 +148,7 @@ Two settings decide it (`.env`, or the environment):
 ESAM_EMBED_MODEL=BAAI/bge-small-en-v1.5        # folder: models/bge-small-en-v1.5 (or ESAM_EMBED_MODEL_DIR)
 
 # An endpoint: setting the URL is the switch. Ollama, TEI, vLLM, OpenAI, a gateway route:
-ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
+ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1/embeddings
 ESAM_EMBED_MODEL=nomic-embed-text
 ```
 

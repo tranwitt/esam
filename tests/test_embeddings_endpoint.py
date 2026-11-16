@@ -26,11 +26,11 @@ def serve_embeddings(endpoint, dim=4, reverse=False):
 
 def test_model_and_url_are_all_it_needs(endpoint):
     serve_embeddings(endpoint, dim=6)
-    emb = OpenAICompatEmbedder(endpoint.url, "sk-e", "nomic-embed-text")
+    emb = OpenAICompatEmbedder((endpoint.url + "/embeddings"), "sk-e", "nomic-embed-text")
     assert emb.dim == 6 and emb.model_id == "openai-compat:nomic-embed-text"
     assert endpoint.calls[0][0] == "/embeddings" and endpoint.calls[0][1]["model"] == "nomic-embed-text"
     assert endpoint.calls[0][2]["Authorization"] == "Bearer sk-e"
-    assert "nomic-embed-text" in emb.describe() and endpoint.url in emb.describe()
+    assert "nomic-embed-text" in emb.describe() and (endpoint.url + "/embeddings") in emb.describe()
 
 
 def test_it_says_which_of_the_two_is_missing():
@@ -42,7 +42,7 @@ def test_it_says_which_of_the_two_is_missing():
 
 def test_batches_keep_input_order(endpoint):
     serve_embeddings(endpoint, reverse=True)                     # the server answers out of order
-    emb = OpenAICompatEmbedder(endpoint.url, "", "some-model", batch_size=2)
+    emb = OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "some-model", batch_size=2)
     endpoint.calls.clear()
     vecs = emb.embed_documents(["a", "bb", "ccc", "dddd", "eeeee"])
     assert [v[0] for v in vecs] == [1.0, 2.0, 3.0, 4.0, 5.0]
@@ -52,13 +52,13 @@ def test_batches_keep_input_order(endpoint):
 
 def test_prefixes_follow_the_model_family_and_can_be_overridden(endpoint):
     serve_embeddings(endpoint)
-    bge = OpenAICompatEmbedder(endpoint.url, "", "BAAI/bge-base-en-v1.5")
+    bge = OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "BAAI/bge-base-en-v1.5")
     endpoint.calls.clear()
     bge.embed_query("brake data lost"), bge.embed_documents(["a chunk"])
     assert endpoint.calls[0][1]["input"] == [QUERY_PREFIX["bge"] + "brake data lost"]
     assert endpoint.calls[1][1]["input"] == ["a chunk"]
-    e5 = OpenAICompatEmbedder(endpoint.url, "", "intfloat/e5-base-v2")
-    plain = OpenAICompatEmbedder(endpoint.url, "", "BAAI/bge-base-en-v1.5", query_prefix_="none")
+    e5 = OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "intfloat/e5-base-v2")
+    plain = OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "BAAI/bge-base-en-v1.5", query_prefix_="none")
     endpoint.calls.clear()
     e5.embed_query("q"), e5.embed_documents(["d"]), plain.embed_query("q")
     assert [c[1]["input"] for c in endpoint.calls] == [["query: q"], ["passage: d"], ["q"]]
@@ -66,7 +66,7 @@ def test_prefixes_follow_the_model_family_and_can_be_overridden(endpoint):
 
 def test_dimensions_are_requested_and_part_of_the_identity(endpoint):
     serve_embeddings(endpoint, dim=1536)
-    emb = OpenAICompatEmbedder(endpoint.url, "k", "text-embedding-3-small", dimensions=256)
+    emb = OpenAICompatEmbedder((endpoint.url + "/embeddings"), "k", "text-embedding-3-small", dimensions=256)
     assert emb.dim == 256 and endpoint.calls[0][1]["dimensions"] == 256
     assert emb.model_id == identity("text-embedding-3-small", 256) == "openai-compat:text-embedding-3-small@256"
 
@@ -74,19 +74,19 @@ def test_dimensions_are_requested_and_part_of_the_identity(endpoint):
 def test_a_short_answer_or_a_wrong_model_is_an_error(endpoint):
     endpoint.handlers["/embeddings"] = lambda b: (200, {"data": []})
     with pytest.raises(EndpointError, match="expected 1 embeddings"):
-        OpenAICompatEmbedder(endpoint.url, "", "m")
+        OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "m")
     endpoint.handlers["/embeddings"] = lambda b: (404, {"error": {"message": "model 'm' not found"}})
     with pytest.raises(EndpointError, match="HTTP 404.*not found"):
-        OpenAICompatEmbedder(endpoint.url, "", "m")
+        OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "m")
 
 
 def test_factory_builds_it_from_settings(endpoint):
     serve_embeddings(endpoint)
-    s = replace(settings, embed_backend="openai", embed_base_url=endpoint.url, embed_model="my-model", embed_api_key="")
+    s = replace(settings, embed_backend="openai", embed_base_url=(endpoint.url + "/embeddings"), embed_model="my-model", embed_api_key="")
     emb = get_embedder(s)
     assert emb.model_id == embedder_identity(s) == "openai-compat:my-model"
     assert embedder_identity(replace(settings, embed_backend="local", embed_model_id="BAAI/bge-small-en-v1.5")) == "BAAI/bge-small-en-v1.5"
-    assert s.openai_base_url == endpoint.url and s.openai_embed_model == "my-model"      # the older names
+    assert s.openai_base_url == (endpoint.url + "/embeddings") and s.openai_embed_model == "my-model"      # the older names
 
 
 def test_default_model_folder_follows_the_model_name():
@@ -110,11 +110,11 @@ def test_local_profile_takes_model_and_url_from_the_environment(monkeypatch):
     assert s.embed_model_dir.name == "bge-small-en-v1.5"
 
     monkeypatch.setenv("ESAM_EMBED_MODEL", "nomic-embed-text")                          # a URL: the endpoint
-    monkeypatch.setenv("ESAM_EMBED_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("ESAM_EMBED_BASE_URL", "http://127.0.0.1:11434/v1/embeddings")
     monkeypatch.setenv("ESAM_EMBED_API_KEY", "sk-e")
     s = env.settings_for(prof)
     assert (s.embed_backend, s.embed_model, s.embed_base_url, s.embed_api_key) == (
-        "openai", "nomic-embed-text", "http://127.0.0.1:11434/v1", "sk-e")
+        "openai", "nomic-embed-text", "http://127.0.0.1:11434/v1/embeddings", "sk-e")
     assert embedder_identity(s) == "openai-compat:nomic-embed-text"
     choice = env.embedding_choice(prof)
     assert choice["model_source"] == "env ESAM_EMBED_MODEL" and choice["url_source"] == "env ESAM_EMBED_BASE_URL"
@@ -139,26 +139,26 @@ def test_pilot_profiles_use_the_staged_local_model_until_the_environment_file_sa
         assert s.embed_backend == "local" and s.embed_base_url == "" and s.diagrams == "local"
         assert s.embed_model_id == "BAAI/bge-base-en-v1.5" and s.embed_model_dir.name == "bge-base-en-v1.5"
     # the profiles name the .env variables, so a gateway embeddings route is one line in .env
-    monkeypatch.setenv("ESAM_EMBED_BASE_URL", "https://gateway.example/v1")
+    monkeypatch.setenv("ESAM_EMBED_BASE_URL", "https://gateway.example/v1/embeddings")
     monkeypatch.setenv("ESAM_EMBED_MODEL", "gateway-embed")
     for name in ("pilot-il5", "full-janusgraph"):
         s = env.settings_for(env.load_profile(name))
-        assert (s.embed_backend, s.embed_base_url, s.embed_model) == ("openai", "https://gateway.example/v1", "gateway-embed")
+        assert (s.embed_backend, s.embed_base_url, s.embed_model) == ("openai", "https://gateway.example/v1/embeddings", "gateway-embed")
 
 
 def test_probe_checks_the_endpoint_and_reports_model_and_url(endpoint):
     serve_embeddings(endpoint, dim=768)
     prof = {"name": "t", "network": {"internet": False},
-            "embeddings": {"backend": "openai", "model": "my-model", "base_url": endpoint.url}}
+            "embeddings": {"backend": "openai", "model": "my-model", "base_url": (endpoint.url + "/embeddings")}}
     s = env.settings_for(prof)
     p = env.probe_embeddings(prof, s)
-    assert p.status == "ok" and "my-model" in p.detail and endpoint.url in p.detail and p.data["dim"] == 768
+    assert p.status == "ok" and "my-model" in p.detail and (endpoint.url + "/embeddings") in p.detail and p.data["dim"] == 768
     assert env.probe_embeddings(prof, s, network=False).status == "warning"
     assert endpoint.paths() == ["/embeddings"]                    # --no-network contacted nothing
 
     down = dict(prof, embeddings=dict(prof["embeddings"], base_url=dead_url()))
     assert env.probe_embeddings(down, env.settings_for(down)).status == "unavailable"
-    no_model = dict(prof, embeddings={"backend": "openai", "base_url": endpoint.url})
+    no_model = dict(prof, embeddings={"backend": "openai", "base_url": (endpoint.url + "/embeddings")})
     p = env.probe_embeddings(no_model, replace(env.settings_for(no_model), embed_model=""))
     assert p.status == "not_configured" and "embeddings.model" in p.detail
     no_url = dict(prof, embeddings={"backend": "openai", "model": "m", "base_url_env": "T_EMBED_URL"})
@@ -201,13 +201,13 @@ def test_an_endpoint_set_up_with_the_older_names_works_under_a_profile(monkeypat
     for v in ("ESAM_EMBED_MODEL", "ESAM_EMBED_BASE_URL", "ESAM_EMBED_API_KEY"):
         monkeypatch.delenv(v, raising=False)
     monkeypatch.setenv("ESAM_EMBED_BACKEND", "openai")
-    monkeypatch.setenv("ESAM_OPENAI_BASE_URL", endpoint.url)
+    monkeypatch.setenv("ESAM_OPENAI_BASE_URL", (endpoint.url + "/embeddings"))
     monkeypatch.setenv("ESAM_OPENAI_API_KEY", "sk-old")
     monkeypatch.setenv("ESAM_OPENAI_EMBED_MODEL", "gateway-embed")
     monkeypatch.setenv("ESAM_EMBED_MODEL_ID", "BAAI/bge-base-en-v1.5")
     for name in ("local", "pilot-il5"):
         choice = env.embedding_choice(env.load_profile(name))
-        assert (choice["backend"], choice["model"], choice["base_url"], choice["api_key"]) == ("openai", "gateway-embed", endpoint.url, "sk-old")
+        assert (choice["backend"], choice["model"], choice["base_url"], choice["api_key"]) == ("openai", "gateway-embed", (endpoint.url + "/embeddings"), "sk-old")
         assert choice["model_source"] == "env ESAM_OPENAI_EMBED_MODEL"
         s = env.settings_for(env.load_profile(name))
         emb = get_embedder(s)
@@ -217,7 +217,7 @@ def test_an_endpoint_set_up_with_the_older_names_works_under_a_profile(monkeypat
 
 def test_requests_do_not_announce_themselves_as_python_urllib(endpoint):
     serve_embeddings(endpoint, dim=4)
-    OpenAICompatEmbedder(endpoint.url, "k", "m")
+    OpenAICompatEmbedder((endpoint.url + "/embeddings"), "k", "m")
     assert endpoint.calls[0][2]["User-Agent"] == "ESAM/1.0"
 
 
@@ -228,24 +228,24 @@ def test_a_passing_failure_is_tried_again_and_a_refused_key_is_not(endpoint, mon
     answers = [(503, {"error": "warming up"}), (429, {"error": "slow down"}),
                (200, {"data": [{"index": 0, "embedding": [0.0, 1.0]}]})]
     endpoint.handlers["/embeddings"] = lambda b: answers.pop(0) if len(answers) > 1 else answers[0]
-    assert OpenAICompatEmbedder(endpoint.url, "k", "m").dim == 2 and len(endpoint.calls) == 3
+    assert OpenAICompatEmbedder((endpoint.url + "/embeddings"), "k", "m").dim == 2 and len(endpoint.calls) == 3
 
     endpoint.calls.clear()
     endpoint.handlers["/embeddings"] = lambda b: (401, {"error": {"message": "Incorrect API key"}})
     with pytest.raises(EndpointError) as err:
-        OpenAICompatEmbedder(endpoint.url, "sk-abcdefghijklmnopqrstuvwx", "m")
+        OpenAICompatEmbedder((endpoint.url + "/embeddings"), "sk-abcdefghijklmnopqrstuvwx", "m")
     assert "Bearer <key from ESAM_EMBED_API_KEY: 27 characters, ends …uvwx>" in str(err.value)
     assert "sk-abcdefghij" not in str(err.value) and "Incorrect API key" in str(err.value)
     with pytest.raises(EndpointError, match="it contains spaces, a '#': check the line in .env"):
-        OpenAICompatEmbedder(endpoint.url, "sk-abc   # my key", "m")
+        OpenAICompatEmbedder((endpoint.url + "/embeddings"), "sk-abc   # my key", "m")
     with pytest.raises(EndpointError, match="No API key was sent; set ESAM_EMBED_API_KEY"):
-        OpenAICompatEmbedder(endpoint.url, "", "m")
+        OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "m")
     assert len(endpoint.calls) == 3                                  # one each: not retried
 
     endpoint.calls.clear()
     endpoint.handlers["/embeddings"] = lambda b: (404, {"error": {"message": "model not found"}})
     with pytest.raises(EndpointError, match="model not found"):
-        OpenAICompatEmbedder(endpoint.url, "k", "nope")
+        OpenAICompatEmbedder((endpoint.url + "/embeddings"), "k", "nope")
     assert len(endpoint.calls) == 1
 
 
@@ -253,13 +253,34 @@ def test_one_gateway_for_both_uses_the_reasoning_key_when_embeddings_has_none(en
     from esamkit.factory import embed_api_key
     serve_embeddings(endpoint, dim=4)
     serve_embeddings(endpoint_b, dim=4)
-    s = replace(settings, embed_backend="openai", embed_base_url=endpoint.url, embed_model="m", embed_api_key="",
+    s = replace(settings, embed_backend="openai", embed_base_url=(endpoint.url + "/embeddings"), embed_model="m", embed_api_key="",
                 chat_base_url=endpoint.url.replace("/v1", "/openai/v1"), chat_api_key="gateway-key")
     get_embedder(s)
     assert endpoint.calls[-1][2]["Authorization"] == "Bearer gateway-key"          # same host: the gateway's one key
     assert "same host as the reasoning model" in embed_api_key(s)[1]
     get_embedder(replace(s, embed_api_key="embed-key"))
     assert endpoint.calls[-1][2]["Authorization"] == "Bearer embed-key"            # its own key always wins
-    get_embedder(replace(s, embed_base_url=endpoint_b.url))
+    get_embedder(replace(s, embed_base_url=(endpoint_b.url + "/embeddings")))
     assert "Authorization" not in endpoint_b.calls[-1][2]                          # another host never gets the reasoning key
     assert embed_api_key(replace(s, chat_api_key="")) == ("", "")
+
+
+def test_the_url_is_used_exactly_as_written(endpoint):
+    answer = lambda b: (200, {"data": [{"index": 0, "embedding": [0.0, 1.0, 2.0]}]})          # noqa: E731
+    root = endpoint.url.removesuffix("/v1")
+    for path in ("/embeddings", "/custom/route/embed", "/openai/deployments/my-embed/embeddings?api-version=2024-02-01"):
+        endpoint.calls.clear()
+        endpoint.handlers[path] = answer
+        emb = OpenAICompatEmbedder(root + path, "k", "m")
+        assert emb.dim == 3 and endpoint.paths() == [path] and emb.base_url == root + path     # nothing added, nothing removed
+    endpoint.calls.clear()
+    endpoint.handlers["/embed/"] = answer                                                        # even a trailing slash is kept
+    OpenAICompatEmbedder(root + "/embed/", "k", "m")
+    assert endpoint.paths() == ["/embed/"]
+
+
+def test_a_base_url_without_the_endpoint_path_says_what_is_wrong(endpoint):
+    serve_embeddings(endpoint, dim=4)
+    with pytest.raises(EndpointError, match=r"nothing is appended: it must be the full address.*e\.g\. http://127\.0\.0\.1:\d+/v1/embeddings"):
+        OpenAICompatEmbedder(endpoint.url, "k", "m")                    # .../v1: what the setting used to take
+    assert endpoint.paths() == [""]                                     # posted to exactly that, once

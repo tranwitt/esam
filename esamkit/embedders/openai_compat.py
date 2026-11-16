@@ -1,12 +1,12 @@
 """
 Endpoint embedder: any server that speaks the OpenAI embeddings protocol
-(POST <base_url>/embeddings). That covers self-hosted servers (vLLM, Hugging
+(POST to the URL you give, exactly as written). That covers self-hosted servers (vLLM, Hugging
 Face TEI, Ollama, LiteLLM), an API gateway, and OpenAI itself.
 
 You choose two things, the MODEL and the URL:
 
     ESAM_EMBED_MODEL=<the model name the endpoint serves>
-    ESAM_EMBED_BASE_URL=https://<host>/v1          # ESAM posts to <this>/embeddings
+    ESAM_EMBED_BASE_URL=https://<host>/v1/embeddings   # the FULL address: nothing is appended to it
     ESAM_EMBED_API_KEY=...                         # if the endpoint wants one
 
 Setting the URL is enough to switch from the local model to the endpoint
@@ -20,15 +20,15 @@ in effect, and that the endpoint answers, with:
 Examples:
 
     # Ollama on this machine
-    ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
+    ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1/embeddings
     ESAM_EMBED_MODEL=nomic-embed-text
 
     # A TEI or vLLM server hosting the same BGE model as the local backend
-    ESAM_EMBED_BASE_URL=http://embeddings.internal:8080/v1
+    ESAM_EMBED_BASE_URL=http://embeddings.internal:8080/v1/embeddings
     ESAM_EMBED_MODEL=BAAI/bge-base-en-v1.5
 
     # OpenAI, with shorter vectors
-    ESAM_EMBED_BASE_URL=https://api.openai.com/v1
+    ESAM_EMBED_BASE_URL=https://api.openai.com/v1/embeddings
     ESAM_EMBED_MODEL=text-embedding-3-small
     ESAM_EMBED_DIMENSIONS=768
 
@@ -75,17 +75,19 @@ class OpenAICompatEmbedder(Embedder):
         missing = [name for name, value in (("ESAM_EMBED_BASE_URL", base_url), ("ESAM_EMBED_MODEL", model)) if not value]
         if missing:
             raise ValueError(
-                f"The endpoint embedder needs {' and '.join(missing)}: the URL of an OpenAI-compatible "
-                "endpoint (https://<host>/v1) and the name of the embedding model it serves. "
+                f"The endpoint embedder needs {' and '.join(missing)}: the full URL of an OpenAI-compatible "
+                "embeddings endpoint (https://<host>/v1/embeddings; nothing is appended to it) and the name of the embedding model it serves. "
                 "In a profile: embeddings.base_url (or base_url_env) and embeddings.model."
             )
-        self._url = base_url.rstrip("/") + "/embeddings"
+        # The URL is used exactly as given: nothing is appended to it. It is the full address the
+        # request is POSTed to (https://<host>/v1/embeddings on an OpenAI-style server).
+        self._url = base_url.strip()
         self._key, self._model, self._timeout = api_key, model, timeout
         self._key_source = key_source or "ESAM_EMBED_API_KEY"
         self._dimensions, self._batch = dimensions, max(1, batch_size)
         self._query_prefix = query_prefix(model, query_prefix_)
         self._doc_prefix = doc_prefix(model, doc_prefix_)
-        self.base_url = base_url.rstrip("/")
+        self.base_url = self._url
         self.model_id = identity(model, dimensions)
         # Ask the server once for a vector so we learn the dimension instead
         # of hard-coding it (the old script hard-coded 768).
@@ -120,6 +122,10 @@ class OpenAICompatEmbedder(Embedder):
                         f"Sent: Authorization: Bearer <key from {self._key_source}: {describe_key(self._key)}>. "
                         "Check that this is the key and the URL that work elsewhere" if self._key else
                         "No API key was sent; set ESAM_EMBED_API_KEY") + "]") from None
+                if e.status in (404, 405) and not self._url.rstrip("/").endswith("embeddings"):
+                    raise EndpointError(self._url, e.status, f"{e.detail} [the URL is used exactly as written, nothing is "
+                                        "appended: it must be the full address of the embeddings endpoint, "
+                                        f"e.g. {self._url.rstrip('/')}/embeddings]") from None
                 if attempt == RETRIES or not (e.status is None or e.status in (408, 409, 429) or e.status >= 500):
                     raise
                 time.sleep(RETRY_WAIT * (attempt + 1))

@@ -122,7 +122,8 @@ class Settings:
     #   ESAM_EMBED_MODEL      WHICH model. For the local backend, its Hugging
     #                         Face id; for an endpoint, the name it serves.
     #   ESAM_EMBED_BASE_URL   WHERE it runs: the URL of an OpenAI-compatible
-    #                         endpoint (…/v1; ESAM posts to …/v1/embeddings).
+    #                         embeddings endpoint, in full (…/v1/embeddings).
+    #                         It is used exactly as written: nothing is appended.
     #                         Unset = on this machine, from a folder on disk.
     #
     # "local"  = sentence-transformers model loaded from a folder on disk

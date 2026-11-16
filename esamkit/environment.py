@@ -443,7 +443,7 @@ def probe_embeddings(profile: dict, s: Settings, network: bool = True) -> Probe:
         if not name:
             return Probe("embeddings", "not_configured", f"endpoint {url}: say which model with embeddings.model "
                                                          "(or ESAM_EMBED_MODEL)", data)
-        where = f"{name} at {url}/embeddings (model from {choice['model_source']}, URL from {choice['url_source']})"
+        where = f"{name} at {url} (model from {choice['model_source']}, URL from {choice['url_source']})"
         if not network:
             return Probe("embeddings", "warning", f"{where}; not contacted (--no-network)", data)
         if _is_public(url) and not (profile.get("network") or {}).get("internet", False):

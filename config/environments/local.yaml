@@ -59,16 +59,16 @@ llm:
 
 # The embedding model: WHICH model, and WHERE it runs.
 #   model      the model. Local backend: its Hugging Face id. Endpoint: the name the endpoint serves.
-#   base_url   the URL of an OpenAI-compatible embeddings endpoint (https://<host>/v1). None = run locally.
+#   base_url   the FULL URL of an OpenAI-compatible embeddings endpoint (https://<host>/v1/embeddings), used exactly as written. None = run locally.
 # On this profile both can be set without editing the file:
-#   ESAM_EMBED_MODEL=nomic-embed-text  ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
+#   ESAM_EMBED_MODEL=nomic-embed-text  ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1/embeddings
 # `python -m esamkit.environment` shows the model and URL in effect and checks them.
 # Changing the model means re-embedding everything (the store refuses to mix models).
 embeddings:
   backend: auto                        # auto (endpoint if a URL is set, else local) | local | openai | none
   model: BAAI/bge-base-en-v1.5
   model_env: ESAM_EMBED_MODEL          # this variable, when set, overrides `model`
-  base_url_env: ESAM_EMBED_BASE_URL    # or write the URL here:  base_url: https://<host>/v1
+  base_url_env: ESAM_EMBED_BASE_URL    # or write the full URL here:  base_url: https://<host>/v1/embeddings
   api_key_env: ESAM_EMBED_API_KEY      # only if the endpoint wants a key
   model_dir_env: ESAM_EMBED_MODEL_DIR  # local backend only; default is models/<last part of the model name>
   # dimensions: 768                    # endpoint only: ask for shorter vectors (text-embedding-3-*)
