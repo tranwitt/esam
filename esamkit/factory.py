@@ -15,7 +15,7 @@ the local Docker database to the pilot's VM-1 is just:
 The embedding model is chosen the same way, by MODEL and URL:
 
     ESAM_EMBED_MODEL=<model>                 # which model
-    ESAM_EMBED_BASE_URL=https://<host>/v1/embeddings    # the full URL, used as written; unset = locally, from disk
+    ESAM_EMBED_BASE_URL=https://<host>/v1    # where it runs; unset = locally, from disk
 
 Adding another vector database later = one new class implementing
 VectorStore (vectorstores/base.py) + one more branch below. Backend modules
@@ -37,7 +37,7 @@ def get_embedder(s: Settings = default_settings) -> Embedder:
         key, source = embed_api_key(s)
         return OpenAICompatEmbedder(s.embed_base_url, key, s.embed_model, s.embed_dimensions,
                                     s.embed_batch_size, s.embed_query_prefix, s.embed_doc_prefix, s.llm_timeout,
-                                    key_source=source)
+                                    key_source=source, client=s.embed_client)
     raise ValueError(f"Unknown ESAM_EMBED_BACKEND={s.embed_backend!r} (use 'local' or 'openai')")
 
 

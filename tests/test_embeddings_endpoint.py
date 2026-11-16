@@ -238,7 +238,7 @@ def test_a_passing_failure_is_tried_again_and_a_refused_key_is_not(endpoint, mon
     assert "sk-abcdefghij" not in str(err.value) and "Incorrect API key" in str(err.value)
     with pytest.raises(EndpointError, match="it contains spaces, a '#': check the line in .env"):
         OpenAICompatEmbedder((endpoint.url + "/embeddings"), "sk-abc   # my key", "m")
-    with pytest.raises(EndpointError, match="No API key was sent; set ESAM_EMBED_API_KEY"):
+    with pytest.raises(EndpointError, match="No API key was set; set ESAM_EMBED_API_KEY"):
         OpenAICompatEmbedder((endpoint.url + "/embeddings"), "", "m")
     assert len(endpoint.calls) == 3                                  # one each: not retried
 
@@ -265,22 +265,90 @@ def test_one_gateway_for_both_uses_the_reasoning_key_when_embeddings_has_none(en
     assert embed_api_key(replace(s, chat_api_key="")) == ("", "")
 
 
-def test_the_url_is_used_exactly_as_written(endpoint):
-    answer = lambda b: (200, {"data": [{"index": 0, "embedding": [0.0, 1.0, 2.0]}]})          # noqa: E731
-    root = endpoint.url.removesuffix("/v1")
-    for path in ("/embeddings", "/custom/route/embed", "/openai/deployments/my-embed/embeddings?api-version=2024-02-01"):
-        endpoint.calls.clear()
-        endpoint.handlers[path] = answer
-        emb = OpenAICompatEmbedder(root + path, "k", "m")
-        assert emb.dim == 3 and endpoint.paths() == [path] and emb.base_url == root + path     # nothing added, nothing removed
-    endpoint.calls.clear()
-    endpoint.handlers["/embed/"] = answer                                                        # even a trailing slash is kept
-    OpenAICompatEmbedder(root + "/embed/", "k", "m")
-    assert endpoint.paths() == ["/embed/"]
-
-
-def test_a_base_url_without_the_endpoint_path_says_what_is_wrong(endpoint):
+def test_the_request_goes_to_base_url_plus_embeddings_as_on_main(endpoint):
+    from esamkit.embedders.openai_compat import base_of
     serve_embeddings(endpoint, dim=4)
-    with pytest.raises(EndpointError, match=r"nothing is appended: it must be the full address.*e\.g\. http://127\.0\.0\.1:\d+/v1/embeddings"):
-        OpenAICompatEmbedder(endpoint.url, "k", "m")                    # .../v1: what the setting used to take
-    assert endpoint.paths() == [""]                                     # posted to exactly that, once
+    for given in (endpoint.url, endpoint.url + "/", endpoint.url + "/embeddings", endpoint.url + "/embeddings/"):
+        endpoint.calls.clear()
+        emb = OpenAICompatEmbedder(given, "k", "m", client="http")
+        assert endpoint.paths() == ["/embeddings"] and emb.base_url == endpoint.url        # .../v1 and .../v1/embeddings: one address
+    assert base_of("https://gw.example/v1") == base_of("https://gw.example/v1/embeddings/") == "https://gw.example/v1"
+    assert base_of("https://gw.example/embeddings-api/v1") == "https://gw.example/embeddings-api/v1"
+
+
+# ── the OpenAI SDK, as main calls it ─────────────────────────────────────────
+
+class FakeSDK:
+    """Stands in for the `openai` package: records how it is called and
+    forwards the request to the fake endpoint, as the real SDK would."""
+    made = []
+
+    class AuthenticationError(Exception):
+        status_code = 401
+
+    def __init__(self, **kw):
+        self.kw, self.requests = kw, []
+        FakeSDK.made.append(self)
+        self.embeddings = self
+
+    def create(self, **kw):
+        from types import SimpleNamespace as NS
+        from esamkit.llm import EndpointError, post_json
+        self.requests.append(kw)
+        try:
+            data = post_json(self.kw["base_url"].rstrip("/") + "/embeddings", kw, self.kw["api_key"])
+        except EndpointError as e:
+            if e.status == 401:
+                raise FakeSDK.AuthenticationError("Error code: 401 - Incorrect API key") from None
+            raise
+        return NS(data=[NS(index=d["index"], embedding=d["embedding"]) for d in data["data"]])
+
+
+@pytest.fixture
+def sdk(monkeypatch):
+    import sys
+    import types
+    FakeSDK.made.clear()
+    module = types.ModuleType("openai")
+    module.OpenAI = FakeSDK
+    monkeypatch.setitem(sys.modules, "openai", module)
+    return FakeSDK
+
+
+def test_with_the_sdk_installed_it_is_called_exactly_as_main_calls_it(endpoint, sdk):
+    serve_embeddings(endpoint, dim=5, reverse=True)
+    emb = OpenAICompatEmbedder(endpoint.url, "sk-main", "gateway-embed")              # client="auto": the SDK is there
+    assert emb.client == "sdk" and emb.dim == 5 and emb.model_id == "openai-compat:gateway-embed"
+    client = sdk.made[0]
+    assert client.kw["base_url"] == endpoint.url and client.kw["api_key"] == "sk-main"   # main: OpenAI(base_url=..., api_key=...)
+    assert client.requests[0] == {"model": "gateway-embed", "input": ["dimension probe"]}   # main: embeddings.create(model=, input=)
+    vectors = emb.embed_documents(["a", "bbb", "cc"])
+    assert [v[0] for v in vectors] == [1.0, 3.0, 2.0]                                # answers re-ordered by index
+    assert endpoint.paths() == ["/embeddings"] * 2 and endpoint.calls[0][2]["Authorization"] == "Bearer sk-main"
+
+    OpenAICompatEmbedder(endpoint.url + "/embeddings", "", "m", dimensions=3)            # full URL: same base; no key: "unused", as main
+    assert sdk.made[1].kw["base_url"] == endpoint.url and sdk.made[1].kw["api_key"] == "unused"
+    assert sdk.made[1].requests[0] == {"model": "m", "input": ["dimension probe"], "dimensions": 3}
+
+
+def test_the_client_can_be_chosen(endpoint, sdk, monkeypatch):
+    import sys
+    serve_embeddings(endpoint, dim=4)
+    assert OpenAICompatEmbedder(endpoint.url, "k", "m", client="http").client == "http" and sdk.made == []
+    s = replace(settings, embed_backend="openai", embed_base_url=endpoint.url, embed_model="m", embed_api_key="k")
+    assert get_embedder(replace(s, embed_client="sdk")).client == "sdk"
+    assert get_embedder(replace(s, embed_client="http")).client == "http"
+    with pytest.raises(ValueError, match="use auto, sdk or http"):
+        OpenAICompatEmbedder(endpoint.url, "k", "m", client="curl")
+    monkeypatch.setitem(sys.modules, "openai", None)                                  # the package is not installed
+    assert OpenAICompatEmbedder(endpoint.url, "k", "m").client == "http"             # auto: the built-in client
+    with pytest.raises(ImportError, match="needs the openai package"):
+        OpenAICompatEmbedder(endpoint.url, "k", "m", client="sdk")
+
+
+def test_a_401_through_the_sdk_says_what_was_sent(endpoint, sdk):
+    endpoint.handlers["/embeddings"] = lambda b: (401, {"error": {"message": "Incorrect API key"}})
+    with pytest.raises(EndpointError) as err:
+        OpenAICompatEmbedder(endpoint.url, "sk-abcdefghijklmnopqrstuvwx", "m")
+    assert err.value.status == 401 and "Bearer <key from ESAM_EMBED_API_KEY: 27 characters, ends …uvwx>" in str(err.value)
+    assert "sk-abcdefghij" not in str(err.value)

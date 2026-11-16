@@ -8,12 +8,13 @@ numpy
 psycopg[binary]>=3.1
 pgvector>=0.3
 
-# The embeddings endpoint and the chat model are called with the standard library
-# (esamkit/llm.py, esamkit/embedders/openai_compat.py): no SDK is needed for them.
+# The embeddings endpoint is called through this SDK, as on main (without it a
+# built-in client sends the same request). The chat model uses the standard
+# library (esamkit/llm.py).
 # Word files (.docx, .doc) are read by built-in readers: nothing to install.
 # Optional system programs, used when present: LibreOffice (soffice) for .doc/.rtf,
 # tesseract for text in picture diagrams.
-# Kept for CrewAI's OpenAI provider (requirements-crew.txt) and existing setups.
+# Also used by CrewAI's OpenAI provider (requirements-crew.txt).
 openai>=1.40
 
 # SE Cockpit web app (cockpit/)

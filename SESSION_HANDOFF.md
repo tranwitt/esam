@@ -47,9 +47,11 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `User-Agent: ESAM/1.0` (not `Python-urllib`); two retries on passing failures; `.env` values may be followed by
   `# comment`. Still different from main on purpose: no `Authorization` header when no key is set (the SDK sent
   `Bearer unused`), and BGE/E5 models served by an endpoint get their query/passage prefixes.
-- **Embeddings URL is the full address**: `ESAM_EMBED_BASE_URL` (and the older `ESAM_OPENAI_BASE_URL`, and
-  `embeddings.base_url` in a profile) is POSTed to exactly as written; `/embeddings` is no longer appended. A value
-  ending in `/v1` must become `/v1/embeddings` (a 404/405 says so). Chat/Responses URLs are unchanged (still a base URL).
+- **Embeddings endpoint is called as on main**: through the OpenAI SDK (`OpenAI(base_url, api_key or "unused")`,
+  `embeddings.create(model, input)`) when the package is installed, else a built-in client sending the same request
+  (`ESAM_EMBED_CLIENT=auto|sdk|http`). `ESAM_EMBED_BASE_URL` is a base URL again (`…/v1` → `…/v1/embeddings`); a value
+  already ending in `/embeddings` is accepted. The SDK path is tested with a stand-in module only: the session that
+  wrote it had no `openai` package. Run `python -m esamkit.environment` against the real endpoint.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

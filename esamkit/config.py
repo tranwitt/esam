@@ -122,8 +122,8 @@ class Settings:
     #   ESAM_EMBED_MODEL      WHICH model. For the local backend, its Hugging
     #                         Face id; for an endpoint, the name it serves.
     #   ESAM_EMBED_BASE_URL   WHERE it runs: the URL of an OpenAI-compatible
-    #                         embeddings endpoint, in full (…/v1/embeddings).
-    #                         It is used exactly as written: nothing is appended.
+    #                         endpoint (…/v1; requests go to …/v1/embeddings,
+    #                         as on main. …/v1/embeddings is accepted too).
     #                         Unset = on this machine, from a folder on disk.
     #
     # "local"  = sentence-transformers model loaded from a folder on disk
@@ -157,6 +157,10 @@ class Settings:
     # e.g. text-embedding-3-*). 0 = the model's own size.
     embed_dimensions: int = int(os.getenv("ESAM_EMBED_DIMENSIONS", "0") or 0)
     embed_batch_size: int = int(os.getenv("ESAM_EMBED_BATCH_SIZE", "64") or 64)
+    # How the endpoint is called: "sdk" = the OpenAI Python SDK (what main
+    # uses), "http" = the built-in client (no package), "auto" = the SDK when
+    # it is installed, otherwise the built-in client.
+    embed_client: str = os.getenv("ESAM_EMBED_CLIENT", "auto") or "auto"
     # Text put in front of every query / stored chunk before it is sent to the
     # endpoint. "auto" = what the model family was trained with (BGE: an
     # instruction on queries; E5: "query: " / "passage: "; others: nothing).
