@@ -166,3 +166,80 @@ def test_probe_checks_the_endpoint_and_reports_model_and_url(endpoint):
     assert p.status == "not_configured" and "T_EMBED_URL" in p.detail
     public = dict(prof, embeddings={"backend": "openai", "model": "m", "base_url": "https://api.openai.com/v1"})
     assert "air-gapped" in env.probe_embeddings(public, env.settings_for(public)).detail
+
+
+# ── what differed from main (the OpenAI SDK client) ──────────────────────────
+
+def test_dotenv_values_may_be_followed_by_a_comment():
+    from esamkit.config import _dotenv_line as line
+    assert line("ESAM_EMBED_API_KEY=sk-abc123        # the gateway's key") == ("ESAM_EMBED_API_KEY", "sk-abc123")
+    assert line("ESAM_EMBED_BASE_URL=https://gw.example/v1   # ours") == ("ESAM_EMBED_BASE_URL", "https://gw.example/v1")
+    assert line("ESAM_EMBED_DIMENSIONS=0                # shorter vectors") == ("ESAM_EMBED_DIMENSIONS", "0")
+    assert line("ESAM_EMBED_BACKEND=                    # local | openai") == ("ESAM_EMBED_BACKEND", "")
+    assert line('KEY="a value # with a hash"  # note') == ("KEY", "a value # with a hash")
+    assert line("URL=https://host/v1#frag") == ("URL", "https://host/v1#frag")          # no space before '#': part of the value
+    assert line("export ESAM_PG_DSN='postgresql://u:p@h/db'") == ("ESAM_PG_DSN", "postgresql://u:p@h/db")
+    assert line("# ESAM_EMBED_API_KEY=x") is None and line("") is None and line("no equals sign") is None
+
+
+def test_every_line_of_the_example_file_can_be_uncommented():
+    import re
+    from esamkit.config import PROJECT_ROOT, _dotenv_line as line
+    for raw in (PROJECT_ROOT / ".env.example").read_text().splitlines():
+        m = re.match(r"^#?\s*(ESAM_[A-Z0-9_]+=.*)$", raw)
+        if m:
+            key, value = line(m[1])
+            assert "#" not in value and value == value.strip(), raw
+            if key in ("ESAM_EMBED_DIMENSIONS", "ESAM_EMBED_BATCH_SIZE", "ESAM_CHUNK_SIZE", "ESAM_CHUNK_OVERLAP",
+                       "ESAM_LLM_TIMEOUT", "ESAM_LLM_FAILOVER_COOLDOWN"):
+                float(value)
+
+
+def test_an_endpoint_set_up_with_the_older_names_works_under_a_profile(monkeypatch, endpoint):
+    # main's names: ESAM_EMBED_BACKEND=openai + ESAM_OPENAI_*; ESAM_EMBED_MODEL_ID stays the local model's id
+    serve_embeddings(endpoint, dim=4)
+    for v in ("ESAM_EMBED_MODEL", "ESAM_EMBED_BASE_URL", "ESAM_EMBED_API_KEY"):
+        monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("ESAM_EMBED_BACKEND", "openai")
+    monkeypatch.setenv("ESAM_OPENAI_BASE_URL", endpoint.url)
+    monkeypatch.setenv("ESAM_OPENAI_API_KEY", "sk-old")
+    monkeypatch.setenv("ESAM_OPENAI_EMBED_MODEL", "gateway-embed")
+    monkeypatch.setenv("ESAM_EMBED_MODEL_ID", "BAAI/bge-base-en-v1.5")
+    for name in ("local", "pilot-il5"):
+        choice = env.embedding_choice(env.load_profile(name))
+        assert (choice["backend"], choice["model"], choice["base_url"], choice["api_key"]) == ("openai", "gateway-embed", endpoint.url, "sk-old")
+        assert choice["model_source"] == "env ESAM_OPENAI_EMBED_MODEL"
+        s = env.settings_for(env.load_profile(name))
+        emb = get_embedder(s)
+        assert emb.model_id == "openai-compat:gateway-embed" and endpoint.calls[-1][1]["model"] == "gateway-embed"
+        assert endpoint.calls[-1][2]["Authorization"] == "Bearer sk-old"
+
+
+def test_requests_do_not_announce_themselves_as_python_urllib(endpoint):
+    serve_embeddings(endpoint, dim=4)
+    OpenAICompatEmbedder(endpoint.url, "k", "m")
+    assert endpoint.calls[0][2]["User-Agent"] == "ESAM/1.0"
+
+
+def test_a_passing_failure_is_tried_again_and_a_refused_key_is_not(endpoint, monkeypatch):
+    from esamkit.embedders import openai_compat
+    from esamkit.llm import EndpointError
+    monkeypatch.setattr(openai_compat, "RETRY_WAIT", 0)
+    answers = [(503, {"error": "warming up"}), (429, {"error": "slow down"}),
+               (200, {"data": [{"index": 0, "embedding": [0.0, 1.0]}]})]
+    endpoint.handlers["/embeddings"] = lambda b: answers.pop(0) if len(answers) > 1 else answers[0]
+    assert OpenAICompatEmbedder(endpoint.url, "k", "m").dim == 2 and len(endpoint.calls) == 3
+
+    endpoint.calls.clear()
+    endpoint.handlers["/embeddings"] = lambda b: (401, {"error": {"message": "Incorrect API key"}})
+    with pytest.raises(EndpointError, match="check ESAM_EMBED_API_KEY"):
+        OpenAICompatEmbedder(endpoint.url, "wrong", "m")
+    with pytest.raises(EndpointError, match="no API key was sent; set ESAM_EMBED_API_KEY"):
+        OpenAICompatEmbedder(endpoint.url, "", "m")
+    assert len(endpoint.calls) == 2                                  # one each: not retried
+
+    endpoint.calls.clear()
+    endpoint.handlers["/embeddings"] = lambda b: (404, {"error": {"message": "model not found"}})
+    with pytest.raises(EndpointError, match="model not found"):
+        OpenAICompatEmbedder(endpoint.url, "k", "nope")
+    assert len(endpoint.calls) == 1

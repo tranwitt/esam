@@ -266,8 +266,14 @@ class Failover:
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────
 
+# Sent with every request. Without it Python announces itself as
+# "Python-urllib/3.x", which some gateways and CDNs in front of model APIs
+# refuse (HTTP 403) before the request reaches the API.
+USER_AGENT = "ESAM/1.0"
+
+
 def post_json(url: str, payload: dict, api_key: str = "", timeout: float = 120.0) -> dict:
-    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": USER_AGENT}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")

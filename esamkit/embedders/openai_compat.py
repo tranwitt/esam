@@ -43,9 +43,14 @@ will refuse to mix vectors from a different model: this embedder's identity
 is "openai-compat:<model>" (plus "@<dimensions>" when you shorten vectors).
 """
 
+import time
+
 from ..llm import EndpointError, post_json
 from .base import Embedder
 from .prefixes import doc_prefix, query_prefix
+
+
+RETRIES, RETRY_WAIT = 2, 0.5        # like the OpenAI SDK this client replaced: two more tries
 
 
 def identity(model: str, dimensions: int = 0) -> str:
@@ -81,13 +86,30 @@ class OpenAICompatEmbedder(Embedder):
             payload: dict = {"model": self._model, "input": batch}
             if self._dimensions:
                 payload["dimensions"] = self._dimensions
-            data = post_json(self._url, payload, self._key, self._timeout).get("data")
+            data = self._post(payload).get("data")
             if not isinstance(data, list) or len(data) != len(batch):
                 raise EndpointError(self._url, None, f"expected {len(batch)} embeddings for model {self._model!r}, "
                                                      f"got {len(data) if isinstance(data, list) else 'none'}")
             # Answers carry an index; sort so output order matches input order.
             out += [d["embedding"] for d in sorted(data, key=lambda d: d.get("index", 0))]
         return out
+
+    def _post(self, payload: dict) -> dict:
+        """One request, tried again (twice, briefly) when the failure is the
+        passing kind: no connection, a timeout, 408/409/429 or a 5xx. A
+        rejected key or an unknown model fails at once, saying what to check."""
+        for attempt in range(RETRIES + 1):
+            try:
+                return post_json(self._url, payload, self._key, self._timeout)
+            except EndpointError as e:
+                if e.status in (401, 403):
+                    raise EndpointError(self._url, e.status, f"{e.detail} [the endpoint refused the request: " + (
+                        "check ESAM_EMBED_API_KEY" if self._key else
+                        "no API key was sent; set ESAM_EMBED_API_KEY") + "]") from None
+                if attempt == RETRIES or not (e.status is None or e.status in (408, 409, 429) or e.status >= 500):
+                    raise
+                time.sleep(RETRY_WAIT * (attempt + 1))
+        raise AssertionError("unreachable")
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         return self._embed([self._doc_prefix + t for t in texts])

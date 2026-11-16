@@ -42,6 +42,11 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `tests/test_env_file.py` fails if a profile names a variable `.env.example` lacks. Behaviour changes: the local
   profile no longer sends pictures to a model unless `ESAM_VISION_MODEL` is set; pilot profiles follow
   `ESAM_EMBED_BASE_URL` / `ESAM_DIAGRAMS` when set (they used to ignore them).
+- **Embeddings endpoint vs main** (main used the OpenAI SDK; the branch uses urllib): fixed the wrong model name
+  sent under a profile when the endpoint is configured with the older `ESAM_OPENAI_*` names; requests now send
+  `User-Agent: ESAM/1.0` (not `Python-urllib`); two retries on passing failures; `.env` values may be followed by
+  `# comment`. Still different from main on purpose: no `Authorization` header when no key is set (the SDK sent
+  `Bearer unused`), and BGE/E5 models served by an endpoint get their query/passage prefixes.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

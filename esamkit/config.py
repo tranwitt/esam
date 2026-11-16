@@ -7,6 +7,7 @@ Copy `.env.example` to `.env` and edit, or export the variables in your shell.
 """
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,17 +18,34 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 def _load_dotenv(path: Path) -> None:
     """Minimal .env reader: KEY=VALUE lines, '#' comments. Existing env wins.
 
+    A comment may follow a value (`KEY=value   # note`): everything from a
+    '#' that has a space before it is dropped, as .env.example writes them.
+    Put the value in quotes to keep a ' #' that belongs to it.
+
     We avoid the python-dotenv dependency on purpose: one less wheel to carry
     across the air gap.
     """
     if not path.exists():
         return
     for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        parsed = _dotenv_line(line)
+        if parsed:
+            os.environ.setdefault(*parsed)
+
+
+def _dotenv_line(line: str) -> tuple[str, str] | None:
+    line = line.strip()
+    if line.startswith("export "):
+        line = line[7:].lstrip()
+    if not line or line.startswith("#") or "=" not in line:
+        return None
+    key, _, value = line.partition("=")
+    value = value.strip()
+    if value[:1] in ('"', "'") and value.find(value[0], 1) > 0:      # quoted: up to the closing quote, as written
+        value = value[1:value.find(value[0], 1)]
+    else:
+        value = re.split(r"(?:^|\s)#", value, maxsplit=1)[0].strip()
+    return key.strip(), value
 
 
 _load_dotenv(PROJECT_ROOT / ".env")
@@ -51,7 +69,9 @@ def _first(*names: str, default: str = "") -> str:
 #   ESAM_CHAT_*              -> ESAM_REASONING_*   (the reasoning model; ESAM_CHAT_* was its first name)
 #   ESAM_GATEWAY_URL / _KEY  -> the reasoning AND the coding endpoint (they used to share one gateway setting)
 _OLD_PREFIXES = (("ESAM_REASONING_", "ESAM_CHAT_"),)
+#   ESAM_OPENAI_BASE_URL / _API_KEY -> the embeddings endpoint and its key
 _OLD_NAMES = {"ESAM_REASONING_BASE_URL": ("ESAM_GATEWAY_URL",), "ESAM_REASONING_API_KEY": ("ESAM_GATEWAY_KEY",),
+              "ESAM_EMBED_BASE_URL": ("ESAM_OPENAI_BASE_URL",), "ESAM_EMBED_API_KEY": ("ESAM_OPENAI_API_KEY",),
               "ESAM_CODING_BASE_URL": ("ESAM_GATEWAY_URL",), "ESAM_CODING_API_KEY": ("ESAM_GATEWAY_KEY",)}
 
 

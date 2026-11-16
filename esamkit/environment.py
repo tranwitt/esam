@@ -220,14 +220,18 @@ def embedding_choice(profile: dict, base: Settings = default_settings) -> dict:
           dimensions: 768                         # endpoint backend, optional
     """
     emb = profile.get("embeddings") or {}
-    model = _pick(emb, "model") or emb.get("model_id") or ""
     url = _pick(emb, "base_url")
     backend = emb.get("backend", base.embed_backend)
     if backend == "auto":                                     # ESAM_EMBED_BACKEND, else by whether there is a URL
         backend = os.getenv("ESAM_EMBED_BACKEND") or ("openai" if url else "local")
+    # The model: the variable the profile names, when set. An endpoint set up under the older names
+    # (ESAM_OPENAI_*) has its model in ESAM_OPENAI_EMBED_MODEL: that, not the local model the profile writes.
+    old_name = os.getenv("ESAM_OPENAI_EMBED_MODEL", "") if backend == "openai" and emb.get("model_env") else ""
+    model = _env(emb.get("model_env")) or old_name or emb.get("model") or emb.get("model_id") or ""
     model_dir = Path(_pick(emb, "model_dir") or (default_model_dir(model) if model else base.embed_model_dir))
     return {"backend": backend, "model": model, "base_url": url,
-            "model_source": ("env " + emb["model_env"]) if _env(emb.get("model_env")) else "profile",
+            "model_source": ("env " + emb["model_env"]) if _env(emb.get("model_env")) else
+                            "env ESAM_OPENAI_EMBED_MODEL" if old_name else "profile",
             "url_source": (("env " + emb["base_url_env"]) if _env(emb.get("base_url_env")) else "profile") if url else "none",
             "base_url_env": emb.get("base_url_env"), "api_key_env": emb.get("api_key_env"),
             "api_key": _env(emb.get("api_key_env")),
