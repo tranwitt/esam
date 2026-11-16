@@ -232,14 +232,34 @@ def test_a_passing_failure_is_tried_again_and_a_refused_key_is_not(endpoint, mon
 
     endpoint.calls.clear()
     endpoint.handlers["/embeddings"] = lambda b: (401, {"error": {"message": "Incorrect API key"}})
-    with pytest.raises(EndpointError, match="check ESAM_EMBED_API_KEY"):
-        OpenAICompatEmbedder(endpoint.url, "wrong", "m")
-    with pytest.raises(EndpointError, match="no API key was sent; set ESAM_EMBED_API_KEY"):
+    with pytest.raises(EndpointError) as err:
+        OpenAICompatEmbedder(endpoint.url, "sk-abcdefghijklmnopqrstuvwx", "m")
+    assert "Bearer <key from ESAM_EMBED_API_KEY: 27 characters, ends …uvwx>" in str(err.value)
+    assert "sk-abcdefghij" not in str(err.value) and "Incorrect API key" in str(err.value)
+    with pytest.raises(EndpointError, match="it contains spaces, a '#': check the line in .env"):
+        OpenAICompatEmbedder(endpoint.url, "sk-abc   # my key", "m")
+    with pytest.raises(EndpointError, match="No API key was sent; set ESAM_EMBED_API_KEY"):
         OpenAICompatEmbedder(endpoint.url, "", "m")
-    assert len(endpoint.calls) == 2                                  # one each: not retried
+    assert len(endpoint.calls) == 3                                  # one each: not retried
 
     endpoint.calls.clear()
     endpoint.handlers["/embeddings"] = lambda b: (404, {"error": {"message": "model not found"}})
     with pytest.raises(EndpointError, match="model not found"):
         OpenAICompatEmbedder(endpoint.url, "k", "nope")
     assert len(endpoint.calls) == 1
+
+
+def test_one_gateway_for_both_uses_the_reasoning_key_when_embeddings_has_none(endpoint, endpoint_b):
+    from esamkit.factory import embed_api_key
+    serve_embeddings(endpoint, dim=4)
+    serve_embeddings(endpoint_b, dim=4)
+    s = replace(settings, embed_backend="openai", embed_base_url=endpoint.url, embed_model="m", embed_api_key="",
+                chat_base_url=endpoint.url.replace("/v1", "/openai/v1"), chat_api_key="gateway-key")
+    get_embedder(s)
+    assert endpoint.calls[-1][2]["Authorization"] == "Bearer gateway-key"          # same host: the gateway's one key
+    assert "same host as the reasoning model" in embed_api_key(s)[1]
+    get_embedder(replace(s, embed_api_key="embed-key"))
+    assert endpoint.calls[-1][2]["Authorization"] == "Bearer embed-key"            # its own key always wins
+    get_embedder(replace(s, embed_base_url=endpoint_b.url))
+    assert "Authorization" not in endpoint_b.calls[-1][2]                          # another host never gets the reasoning key
+    assert embed_api_key(replace(s, chat_api_key="")) == ("", "")

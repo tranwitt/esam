@@ -50,6 +50,17 @@ from .base import Embedder
 from .prefixes import doc_prefix, query_prefix
 
 
+def describe_key(key: str) -> str:
+    """Enough to tell which key was sent and whether it is damaged, without
+    showing it: its length, its last 4 characters (long keys only), and
+    anything in it that a key never contains."""
+    odd = [what for what, found in (("spaces", any(c.isspace() for c in key)), ("quotes", any(c in "\"'" for c in key)),
+                                    ("a '#'", "#" in key), ("the word Bearer", key.lower().startswith("bearer")),
+                                    ("non-ASCII characters", not key.isascii())) if found]
+    tail = f", ends …{key[-4:]}" if len(key) >= 20 else ""
+    return f"{len(key)} characters{tail}" + (f"; it contains {', '.join(odd)}: check the line in .env" if odd else "")
+
+
 RETRIES, RETRY_WAIT = 2, 0.5        # like the OpenAI SDK this client replaced: two more tries
 
 
@@ -60,7 +71,7 @@ def identity(model: str, dimensions: int = 0) -> str:
 
 class OpenAICompatEmbedder(Embedder):
     def __init__(self, base_url: str, api_key: str, model: str, dimensions: int = 0, batch_size: int = 64,
-                 query_prefix_: str = "auto", doc_prefix_: str = "auto", timeout: float = 120.0):
+                 query_prefix_: str = "auto", doc_prefix_: str = "auto", timeout: float = 120.0, key_source: str = ""):
         missing = [name for name, value in (("ESAM_EMBED_BASE_URL", base_url), ("ESAM_EMBED_MODEL", model)) if not value]
         if missing:
             raise ValueError(
@@ -70,6 +81,7 @@ class OpenAICompatEmbedder(Embedder):
             )
         self._url = base_url.rstrip("/") + "/embeddings"
         self._key, self._model, self._timeout = api_key, model, timeout
+        self._key_source = key_source or "ESAM_EMBED_API_KEY"
         self._dimensions, self._batch = dimensions, max(1, batch_size)
         self._query_prefix = query_prefix(model, query_prefix_)
         self._doc_prefix = doc_prefix(model, doc_prefix_)
@@ -103,9 +115,11 @@ class OpenAICompatEmbedder(Embedder):
                 return post_json(self._url, payload, self._key, self._timeout)
             except EndpointError as e:
                 if e.status in (401, 403):
-                    raise EndpointError(self._url, e.status, f"{e.detail} [the endpoint refused the request: " + (
-                        "check ESAM_EMBED_API_KEY" if self._key else
-                        "no API key was sent; set ESAM_EMBED_API_KEY") + "]") from None
+                    raise EndpointError(self._url, e.status, f"{e.detail} [the endpoint refused the request for model "
+                                        f"{self._model!r}. " + (
+                        f"Sent: Authorization: Bearer <key from {self._key_source}: {describe_key(self._key)}>. "
+                        "Check that this is the key and the URL that work elsewhere" if self._key else
+                        "No API key was sent; set ESAM_EMBED_API_KEY") + "]") from None
                 if attempt == RETRIES or not (e.status is None or e.status in (408, 409, 429) or e.status >= 500):
                     raise
                 time.sleep(RETRY_WAIT * (attempt + 1))

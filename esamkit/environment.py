@@ -454,8 +454,7 @@ def probe_embeddings(profile: dict, s: Settings, network: bool = True) -> Probe:
             t = time.perf_counter()
             dim = get_embedder(replace(s, llm_timeout=min(s.llm_timeout, 15))).dim
         except Exception as e:
-            key = f" (check {choice['api_key_env']})" if choice["api_key_env"] and "401" in str(e) else ""
-            return Probe("embeddings", "unavailable", f"{where}: {type(e).__name__}: {str(e)[:160]}{key}", data)
+            return Probe("embeddings", "unavailable", f"{where}: {type(e).__name__}: {str(e)[:600]}", data)
         data.update(dim=dim, latency_ms=round((time.perf_counter() - t) * 1000))
         return Probe("embeddings", "ok", f"{where}, {dim}-dim, {data['latency_ms']} ms", data)
     cfg = s.embed_model_dir / "config.json"
