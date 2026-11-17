@@ -61,6 +61,12 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `traceability.classify`, `level_of_id`, `id_parts`. Tests: `tests/test_requirement_levels.py`. Shipped SRS
   documents are unchanged (all unmarked, all software). The changed SQL in `graphstores/postgres_cte.py` has NOT
   been run against PostgreSQL; reload the graph to give existing requirements a level.
+- **Example documents show both kinds**: `SRS-BRK-001.md` (+4 system requirements) and `SRS-DCL-001.md` (+2), with
+  `Traces to:` lines on 10 software requirements. The corpus now has 22 requirements (6 system, 16 software); the
+  graph is 42 vertices / 76 edges. Counts were updated in the DB-backed tests (`test_traceability`, `test_health`,
+  `test_confidence`) WITHOUT running them, and the documents must be re-ingested (`python lessons/03_vector_store/ingest.py`,
+  then `python -m crew.main graph reload`). Lessons 05/06 retrieval and confidence results were not re-run with the
+  longer documents. `tests/fixtures/word/SRS-BRK-001.doc` was regenerated from the new markdown.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

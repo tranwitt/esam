@@ -527,13 +527,13 @@ Today a requirement reads:
 A person can see it's safety-related and has a 20 ms deadline. ESAM can't do so reliably. Written for ESAM:
 
 > **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
-> Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-040 | Basis: MIL-STD-882E 4.4.2
+> Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 
 In the markdown file, the attribute line sits directly under the requirement, indented two spaces:
 
 ```
 - **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
-  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-040 | Basis: MIL-STD-882E 4.4.2
+  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 ```
 
 | Field | What goes in it | Checked against |

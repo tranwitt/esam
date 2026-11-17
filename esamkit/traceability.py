@@ -97,7 +97,7 @@ def _short(text: str, n: int = 90) -> str:
 LEVELS = ("system", "software")
 _LEVEL_WORDS = {"system": "system", "sys": "system", "software": "software", "sw": "software"}
 DEFAULT_CLASSIFICATION = {"id_marker": {"system": "SYS", "software": "SW"}, "unmarked": "software", "default": "software", "subjects": {
-    "software": ["software", "firmware", "csci", "application", "program", "code", "algorithm", "task", "driver"],
+    "software": ["software", "firmware", "csci", "application", "program", "code", "algorithm", "task"],
     "system": ["system", "subsystem", "vehicle", "ecu", "unit", "module", "controller", "hardware", "equipment"]}}
 
 

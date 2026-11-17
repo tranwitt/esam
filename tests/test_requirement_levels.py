@@ -150,6 +150,7 @@ def test_the_id_decides_whatever_the_wording():
     ("The Brake Control ECU shall prevent wheel lock-up.", {}, ("system", "wording")),
     ("The system shall report faults to the driver.", {}, ("system", "wording")),
     ("The ECU software shall log faults.", {}, ("software", "wording")),            # a software word wins
+    ("The Driver Digital Cluster shall warn the driver.", {}, ("system", "wording")),         # "driver" is not a software word
     ("The ECUs shall share one bus.", {}, ("software", "assumed")),                 # whole words only: "ecus" is not "ecu"
     ("Wheel speed shall be sampled at 1 kHz.", {}, ("software", "assumed")),
     ("The software shall report what the system shall do.", {}, ("software", "wording")),         # the FIRST shall's subject
@@ -179,28 +180,42 @@ def test_every_requirement_of_an_srs_gets_its_level_from_its_id():
     assert reqs["SRS-SYS-BRK-051"]["safety"] == "SwCI 1" and reqs["SRS-SYS-BRK-051"]["verification"] == ["T"]    # the other attributes still read
 
 
-def test_the_shipped_documents_are_all_software_requirements(onto):
-    ex = extract(load_baseline(settings.baseline_yaml), settings.documents_dir)
-    reqs = [v.props for v in ex.vertices if v.label == "Requirement"]
-    assert len(reqs) == 16 and {p["level"] for p in reqs} == {"software"} and {p["level_source"] for p in reqs} == {"id"}
-    assert all(p["id"].startswith("SRS-") and "level_expected" not in p for p in reqs)        # each says "the software ... shall"
+def test_the_example_documents_show_both_kinds(onto):
+    base = load_baseline(settings.baseline_yaml)
+    ex = extract(base, settings.documents_dir)
+    reqs = {v.eid: v.props for v in ex.vertices if v.label == "Requirement"}
+    system = sorted(r for r, p in reqs.items() if p["level"] == "system")
+    assert system == ["SRS-SYS-BRK-040", "SRS-SYS-BRK-041", "SRS-SYS-BRK-042", "SRS-SYS-BRK-043", "SRS-SYS-DCL-040", "SRS-SYS-DCL-041"]
+    assert sum(p["level"] == "software" for p in reqs.values()) == 16 and {p["level_source"] for p in reqs.values()} == {"id"}
+    assert all("level_expected" not in p for p in reqs.values())              # every id agrees with its wording
+    g = Graph()
+    g.load(base)
+    res = load_traceability(g, base, settings.documents_dir)
+    assert (res["system_requirements"], res["software_requirements"], res["traces"]) == (6, 16, 10)
+    picked = {e["to_eid"] for e in g.e.values() if e["type"] == "TRACES_TO"}
+    assert sorted(set(system) - picked) == ["SRS-SYS-BRK-043"]                # one the software has not picked up, on purpose
+    for doc, owner in (("SRS-BRK-001", "SUB-BRK-ECU"), ("SRS-DCL-001", "SUB-DCL")):
+        rev = review_document((settings.documents_dir / f"{doc}.md").read_text(),
+                              {"id": doc, "type": "srs", "attached_to": owner, "file": f"{doc}.md"}, g, settings)
+        assert rev["issues"] == [] and rev["levels"]["system"] >= 2 and rev["levels"]["software"] >= 7
     assert [f for f in check_baseline(onto, yaml.safe_load(settings.baseline_yaml.read_text()), settings.documents_dir)
             if f.level == "error"] == []
 
 
 def test_software_requirements_trace_up_to_system_requirements(s):
     g, _, res = loaded(s)
-    assert (res["requirements"], res["system_requirements"], res["software_requirements"]) == (23, 3, 20)
+    assert (res["requirements"], res["system_requirements"], res["software_requirements"]) == (29, 9, 20)
     traces = sorted((e["from_eid"], e["to_eid"]) for e in g.e.values() if e["type"] == "TRACES_TO")
     # only parents that ARE requirements: not the ICD, not the safety function, not the one nobody states
-    assert traces == [("SRS-BRK-061", "SRS-SYS-BRK-052"), ("SRS-SW-BRK-060", "SRS-SYS-BRK-050")] and res["traces"] == 2
+    assert [x for x in traces if x[1].startswith("SRS-SYS-BRK-05")] == [
+        ("SRS-BRK-061", "SRS-SYS-BRK-052"), ("SRS-SW-BRK-060", "SRS-SYS-BRK-050")] and res["traces"] == 12
     assert g.v["SRS-BRK-062"]["props"]["traces_to"] == ["SSF-BRK-02", "SRS-SYS-BRK-099"]              # kept as written
     assert g.v["SRS-SYS-BRK-050"]["props"]["level"] == "system" and g.v["SRS-SW-BRK-060"]["props"]["level"] == "software"
     # both levels are the subsystem's: the SRS is attached to it
     assert {e["to_eid"] for e in g.e.values() if e["type"] == "ALLOCATED_TO" and e["from_eid"].startswith("SRS-SYS-BRK-05")} == {"SUB-BRK-ECU"}
     again = load_traceability(g, load_baseline(s.baseline_yaml), s.documents_dir, only={"SRS-BRK-002"})     # one document reloaded
     assert (again["traces"], again["system_requirements"], again["software_requirements"]) == (2, 3, 4)
-    assert sum(e["type"] == "TRACES_TO" for e in g.e.values()) == 2
+    assert sum(e["type"] == "TRACES_TO" for e in g.e.values()) == 12
 
 
 def test_the_review_lists_the_two_levels_apart(s):

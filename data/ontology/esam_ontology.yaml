@@ -299,7 +299,7 @@ requirement_classification:
   unmarked: software
   default: software
   subjects:
-    software: [software, firmware, csci, csc, application, program, code, algorithm, task, driver, routine, function block]
+    software: [software, firmware, csci, csc, application, program, code, algorithm, task, routine, function block]
     system: [system, subsystem, vehicle, ecu, ecm, unit, module, controller, cluster, hardware, equipment, assembly,
              device, sensor, actuator, display, backbone, network, harness]
   test_case_fields:

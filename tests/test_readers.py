@@ -45,7 +45,7 @@ def test_a_word_copy_of_a_corpus_document_reads_the_same_as_its_markdown(name, s
     doc_id = source.stem
     assert read_header(text) == read_header(source.read_text())
     assert facts(text, doc_id) == facts(source.read_text(), doc_id)
-    assert sum(len(x) for x in facts(text, doc_id)) in (4, 9)     # 4 test cases, or 9 requirements
+    assert sum(len(x) for x in facts(text, doc_id)) in (4, 13)    # 4 test cases, or 13 requirements (9 software, 4 system)
 
 
 def test_doc_structure_title_table_bold_ids_attributes_picture():

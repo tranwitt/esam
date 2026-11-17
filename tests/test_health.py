@@ -39,7 +39,7 @@ def test_synth_ltv_report(graph, data):
     assert [(f["where"], f["critical"]) for f in c[1]["findings"]] == [
         ("SUB-BRK-ECU", True), ("SUB-DCL", False), ("SUB-ENG-ECM", False), ("SUB-J1939-BB", True)]
     assert len(c[3]["findings"]) == 1 and "candidate" in c[3]["findings"][0]["message"]
-    assert len(c[4]["findings"]) == 16
+    assert len(c[4]["findings"]) == 22                    # 16 software and 6 system requirements, none tested yet
     roll = {r["eid"]: (r["present"], r["required"], r["percent"]) for r in c[6]["rollup"]}
     assert roll["V-001"] == (5, 9, 56) and roll["SYS-SUSP"] == (3, 4, 75) and roll["SYS-PWR"] == (0, 1, 0)
 

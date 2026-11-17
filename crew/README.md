@@ -200,6 +200,10 @@ Documents without `part` (two ICDs for one ECU) are simply two documents.
   Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-050
 ```
 
+The two example specifications show both kinds: `data/documents/SRS-BRK-001.md` and `SRS-DCL-001.md` each end with
+a *System requirements* section (`SRS-SYS-BRK-040` … `043`, `SRS-SYS-DCL-040`, `041`), and their software
+requirements trace to them. `SRS-SYS-BRK-043` is deliberately traced to by nothing, so the flow-down gap shows.
+
 Each requirement in the graph carries `level` (and `level_source: id`). `Traces to:` from a software requirement
 to a system requirement becomes a `TRACES_TO` link. The review of an SRS lists the two levels apart with counts,
 shows each parent's text, and says which system requirements no software requirement traces to. The health
