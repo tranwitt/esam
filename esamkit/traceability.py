@@ -45,7 +45,7 @@ The formats it reads are the ones the manual asks SEs to write:
       Verification: T | Traces to: SYS-SRS-BRK-050
 
     ## TC-BRK-011 — Pressure release time on incipient wheel lock-up
-    Verifies: SRS-BRK-011.
+    Verifies: SW-SRS-BRK-011.
     Method: Test.
 """
 

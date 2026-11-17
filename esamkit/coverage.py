@@ -3,7 +3,7 @@ Coverage — does the document a question NEEDS actually exist?
 
 Vector search can't answer that: a document that doesn't exist has no
 vectors, so search just returns the closest thing that DOES exist. Ask "how
-is SRS-BRK-011 tested?" with no test description loaded and the best match
+is SW-SRS-BRK-011 tested?" with no test description loaded and the best match
 is the requirement itself, which reads like an answer. A model handed that
 chunk will happily write a plausible test procedure.
 

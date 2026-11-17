@@ -16,7 +16,7 @@ class _Graph:
     """Just enough graph: the subsystem, its candidate EBC1 interface, one brake requirement."""
     def snapshot(self):
         return {"vertices": [{"eid": "SUB-ENG-ECM", "label": "Subsystem", "props": {}},
-                             {"eid": "SRS-BRK-011", "label": "Requirement", "props": {"source_artifact": "SRS-BRK-001"}}],
+                             {"eid": "SW-SRS-BRK-011", "label": "Requirement", "props": {"source_artifact": "SRS-BRK-001"}}],
                 "edges": [{"type": "INTERFACES_WITH", "from_eid": "SUB-J1939-BB", "to_eid": "SUB-ENG-ECM",
                            "props": {"message": "EBC1 (PGN 61441)"}}]}
 
@@ -57,7 +57,7 @@ def test_reference_draft_passes(ctx):
     (("### 3.6 Adaptation requirements\n\nNo requirements.\n", ""), ("outline", "3.6")),
     (("### 3.8 Security and privacy requirements\n\nNo requirements.", "### 3.8 Security and privacy requirements\n"), ("outline", "3.8")),
     (("Safety: SwCI 3 | Verification: T |", "Safety: SwCI 3 | Verification: X |"), ("qualification", "SRS-ENG-010")),
-    (("**SRS-ENG-030**", "**SRS-BRK-011**"), ("requirement id", "SRS-BRK-011")),
+    (("**SRS-ENG-030**", "**SW-SRS-BRK-011**"), ("requirement id", "SW-SRS-BRK-011")),
 ])
 def test_lint_catches(ctx, change, expect):
     old, new = change

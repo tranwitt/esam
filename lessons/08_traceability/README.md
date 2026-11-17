@@ -35,7 +35,7 @@ python lessons/06_missing_document/run_test.py --only brake-std           # runs
 | `esamkit/traceability.py` | `read_requirements()` parses `- **SRS-…**` lines (continuations indented); `read_test_cases()` parses `## TC-… — title` headings and `Verifies:` / `Method:` / `Pass criteria:` fields. `load_traceability()` replaces what each document contributed (`remove_derived`), then upserts |
 | `esamkit/graphstores/postgres_cte.py` | `UNTESTED_REQUIREMENTS`, `VERIFIED_BY`, `TRACE_SUMMARY`: one-hop anti-joins and counts, like lesson 04's Q4 |
 | `esamkit/hybrid.py` step 3b | A verification question that names a requirement asks `verified_by()`; the prompt gets a `TRACEABILITY` section with `MISSING: no test case verifies …` or the verifying test case and its document |
-| `esamkit/confidence.py` | Lesson 06 reloads traceability after ingesting, and the brake scenario checks `TC-BRK-011 verifies SRS-BRK-011` |
+| `esamkit/confidence.py` | Lesson 06 reloads traceability after ingesting, and the brake scenario checks `TC-BRK-011 verifies SW-SRS-BRK-011` |
 | `cockpit/` | Dashboard "Requirement coverage" panel; requirements/test cases in the Graph tab, with "Verified by" / "Verifies" in the details panel |
 | `data/ontology/esam_ontology.yaml` | `Requirement` and `TestCase` (`source: document`); `VERIFIES`, `SPECIFIED_IN`, `ALLOCATED_TO` no longer "planned" |
 

@@ -165,7 +165,7 @@ def test_a_second_srs_for_a_subsystem_adds_its_requirements(tmp_path):
     docs = tmp_path / "documents"
     shutil.copytree(settings.documents_dir, docs)
     (docs / "SRS-BRK-002.md").write_text("# SRS-BRK-002 — Brake Control ECU Software Requirements, Part 2\n\n## 3. Diagnostics\n\n"
-                                         "- **SRS-BRK-050** The software shall report a valve fault within 50 ms.\n")
+                                         "- **SW-SRS-BRK-050** The software shall report a valve fault within 50 ms.\n")
     path = tmp_path / "baseline.yaml"
     text = settings.baseline_yaml.read_text()
     first = next(ln for ln in text.splitlines() if "id: SRS-BRK-001" in ln)
@@ -179,5 +179,5 @@ def test_a_second_srs_for_a_subsystem_adds_its_requirements(tmp_path):
     for v in ex.vertices:
         if v.label == "Requirement":
             by_doc.setdefault(v.props["source_artifact"], []).append(v)
-    assert set(by_doc) >= {"SRS-BRK-001", "SRS-BRK-002"} and [v.eid for v in by_doc["SRS-BRK-002"]] == ["SRS-BRK-050"]
+    assert set(by_doc) >= {"SRS-BRK-001", "SRS-BRK-002"} and [v.eid for v in by_doc["SRS-BRK-002"]] == ["SW-SRS-BRK-050"]
     assert by_doc["SRS-BRK-002"][0].props["subsystem"] == "SUB-BRK-ECU"

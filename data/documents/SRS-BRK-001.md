@@ -4,40 +4,40 @@
 
 ## 1. Control requirements
 
-- **SRS-BRK-010** The software shall execute the wheel-slip control loop every 5 ms with jitter
+- **SW-SRS-BRK-010** The software shall execute the wheel-slip control loop every 5 ms with jitter
   not exceeding 0.5 ms.
   Traces to: SYS-SRS-BRK-040
-- **SRS-BRK-011** The software shall release brake pressure on a wheel within 15 ms of
+- **SW-SRS-BRK-011** The software shall release brake pressure on a wheel within 15 ms of
   detecting incipient lock-up on that wheel.
   Traces to: SYS-SRS-BRK-040
-- **SRS-BRK-012** The software shall support a crew-selectable off-road ABS mode that permits
+- **SW-SRS-BRK-012** The software shall support a crew-selectable off-road ABS mode that permits
   limited wheel lock to build a soil wedge on loose terrain.
 
 ## 2. Safety requirements
 
-- **SRS-BRK-020** The software is assigned Software Criticality Index 1 under MIL-STD-882E and
+- **SW-SRS-BRK-020** The software is assigned Software Criticality Index 1 under MIL-STD-882E and
   shall be developed to the corresponding level of rigor.
-- **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic
+- **SW-SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic
   unit to conventional braking within 20 ms.
   Traces to: SYS-SRS-BRK-041
-- **SRS-BRK-022** The software shall not allocate memory dynamically after initialisation.
+- **SW-SRS-BRK-022** The software shall not allocate memory dynamically after initialisation.
 
 ## 3. Interface requirements
 
-- **SRS-BRK-030** The software shall transmit EBC1 (PGN 61441) every 100 ms ± 10 ms as defined
+- **SW-SRS-BRK-030** The software shall transmit EBC1 (PGN 61441) every 100 ms ± 10 ms as defined
   in ICD-BRK-001.
   Traces to: SYS-SRS-BRK-042
-- **SRS-BRK-031** The software shall set the amber warning lamp request in EBC1 whenever
+- **SW-SRS-BRK-031** The software shall set the amber warning lamp request in EBC1 whenever
   anti-lock modulation is unavailable.
   Traces to: SYS-SRS-BRK-042
-- **SRS-BRK-032** The software shall transmit DM1 within 1 s of any new active fault.
+- **SW-SRS-BRK-032** The software shall transmit DM1 within 1 s of any new active fault.
   Traces to: SYS-SRS-BRK-042
 
 ## 4. System requirements
 
 These are what the Brake Control ECU as a whole must do, whatever mix of hardware and software
 does it. Their ids start with `SYS-` (`SYS-SRS-BRK-…`). The software requirements in
-sections 1 to 3 name the system requirement they derive from on a `Traces to:` line.
+sections 1 to 3 start with `SW-` (`SW-SRS-BRK-…`) and name the system requirement they derive from on a `Traces to:` line.
 
 - **SYS-SRS-BRK-040** The Brake Control ECU shall prevent sustained lock-up of any braked wheel
   during service braking at speeds above 8 km/h.

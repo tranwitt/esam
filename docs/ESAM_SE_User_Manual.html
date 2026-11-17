@@ -709,7 +709,7 @@ svg text { font-family: var(--f-body); fill: var(--ink); }
 </tr>
 <tr>
 <td data-label="Step">Tag</td>
-<td data-label="What ESAM does">Records the IDs a chunk mentions, e.g. <code>verifies: SRS-BRK-012</code></td>
+<td data-label="What ESAM does">Records the IDs a chunk mentions, e.g. <code>verifies: SW-SRS-BRK-012</code></td>
 <td data-label="Why">These become links in the graph: this test <em>verifies</em> that requirement</td>
 </tr>
 </tbody>
@@ -734,7 +734,7 @@ svg text { font-family: var(--f-body); fill: var(--ink); }
 <td data-label="Avoid">Unnumbered or hand-renumbered sections</td>
 </tr>
 <tr>
-<td data-label="Do">Write requirement and test IDs in one consistent format (<code>SRS-BRK-012</code>)</td>
+<td data-label="Do">Write requirement and test IDs in one consistent format (<code>SW-SRS-BRK-012</code>)</td>
 <td data-label="Avoid">Mixed formats (<code>SRS BRK 12</code>, <code>Req 12</code>)</td>
 </tr>
 <tr>
@@ -1068,7 +1068,7 @@ SELECT depth, id, name, wbs FROM up;
 <li><strong>The move is designed to be contained.</strong> ESAM's graph questions all go through one internal interface, so changing the database doesn't change how you use ESAM.</li>
 </ol>
 </div><nav class="prevnext"><a class="pn prev" href="#5-finding-gaps-after-ingestion"><small>← Previous</small>5. Finding gaps after ingestion</a><a class="pn next" href="#7-when-esam-says-that-document-doesnt-exist-yet"><small>Next →</small>7. When ESAM says &quot;that document doesn&#x27;t exist yet&quot;</a></nav></section><section class="chap" style="--c:var(--hue-1)" data-ch="7" data-title="When ESAM says &quot;that document doesn&#x27;t exist yet&quot;"><header class="chap-head"><span class="chap-n">7</span><div><h2 id="7-when-esam-says-that-document-doesnt-exist-yet">When ESAM says &quot;that document doesn&#x27;t exist yet&quot;<a class="hlink" href="#7-when-esam-says-that-document-doesnt-exist-yet" aria-label="Link to this section">#</a></h2><div class="chap-meta">3 min read · 5 parts<span class="tag">Interactive</span></div></div></header><div class="sub"><h3 id="71-why-this-matters">7.1 Why this matters<a class="hlink" href="#71-why-this-matters" aria-label="Link to this section">#</a></h3>
-<p>A document search always returns <em>something</em>: the closest passage that exists. Ask &quot;How is SRS-BRK-011 verified?&quot; when no test description has been written, and the closest passage is the requirement itself. It mentions 15 ms and wheel lock-up, so it looks like an answer, and an AI model given it could write a plausible test procedure that nobody ever approved.</p>
+<p>A document search always returns <em>something</em>: the closest passage that exists. Ask &quot;How is SW-SRS-BRK-011 verified?&quot; when no test description has been written, and the closest passage is the requirement itself. It mentions 15 ms and wheel lock-up, so it looks like an answer, and an AI model given it could write a plausible test procedure that nobody ever approved.</p>
 <p>ESAM prevents this by checking the <strong>baseline</strong> before it answers. The baseline knows which documents each subsystem has, so ESAM can tell the difference between &quot;the documents don't say&quot; and &quot;the document doesn't exist.&quot;</p>
 </div><div class="sub"><h3 id="72-what-esam-does-with-each-question">7.2 What ESAM does with each question<a class="hlink" href="#72-what-esam-does-with-each-question" aria-label="Link to this section">#</a></h3>
 <ol>
@@ -1076,14 +1076,14 @@ SELECT depth, id, name, wbs FROM up;
 <li><strong>Works out which subsystem it's about</strong>: the one you name, or else the one whose documents best match the question.</li>
 <li><strong>Checks the baseline.</strong> If that subsystem has no document of that type, ESAM tells you first and plainly, then reports only what the existing documents say, without filling the gap.</li>
 </ol>
-<figure class="fig" id="fig-gap"><div class="fig-head"><span class="fig-kicker">Interactive</span><span class="fig-title">How ESAM answers “How is SRS-BRK-011 verified?”</span></div><div class="fig-body"><div class="fig-ctl"><button class="std-toggle" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>STD-BRK-001 loaded</button></div><ol class="decide" data-decide></ol></div><figcaption>The gap is detected from the baseline, not guessed by the AI.</figcaption></figure></div><div class="sub"><h3 id="73-what-it-looks-like">7.3 What it looks like<a class="hlink" href="#73-what-it-looks-like" aria-label="Link to this section">#</a></h3>
-<p>Asked how SRS-BRK-011 is verified, before a test description exists:</p>
+<figure class="fig" id="fig-gap"><div class="fig-head"><span class="fig-kicker">Interactive</span><span class="fig-title">How ESAM answers “How is SW-SRS-BRK-011 verified?”</span></div><div class="fig-body"><div class="fig-ctl"><button class="std-toggle" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>STD-BRK-001 loaded</button></div><ol class="decide" data-decide></ol></div><figcaption>The gap is detected from the baseline, not guessed by the AI.</figcaption></figure></div><div class="sub"><h3 id="73-what-it-looks-like">7.3 What it looks like<a class="hlink" href="#73-what-it-looks-like" aria-label="Link to this section">#</a></h3>
+<p>Asked how SW-SRS-BRK-011 is verified, before a test description exists:</p>
 <blockquote class="callout quote">
-<p><em>This question cannot be answered as requested because the Brake ECU test description (STD) for subsystem SUB-BRK-ECU does not exist in the baseline yet. … SRS-BRK-011 is defined as: &quot;The software shall release brake pressure on a wheel within 15 ms of detecting incipient lock-up on that wheel.&quot; [SRS-BRK-001] … until that document exists, any detailed test sequence or thresholds would be an invention and must not be assumed.</em></p>
+<p><em>This question cannot be answered as requested because the Brake ECU test description (STD) for subsystem SUB-BRK-ECU does not exist in the baseline yet. … SW-SRS-BRK-011 is defined as: &quot;The software shall release brake pressure on a wheel within 15 ms of detecting incipient lock-up on that wheel.&quot; [SRS-BRK-001] … until that document exists, any detailed test sequence or thresholds would be an invention and must not be assumed.</em></p>
 </blockquote>
 <p>The same question after STD-BRK-001 is added to the baseline and loaded:</p>
 <blockquote class="callout quote">
-<p><em>The requirement SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … Pass criteria: every one of the 200 releases (50 per wheel × 4 wheels) completes within 15 ms …</em></p>
+<p><em>The requirement SW-SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … Pass criteria: every one of the 200 releases (50 per wheel × 4 wheels) completes within 15 ms …</em></p>
 </blockquote>
 </div><div class="sub"><h3 id="74-the-confidence-test">7.4 The confidence test<a class="hlink" href="#74-the-confidence-test" aria-label="Link to this section">#</a></h3>
 <p>ESAM runs this exact sequence as an automated test: ask, confirm it reports the gap, add the document, ask again, confirm the answer now cites it. It is checked in two ways:</p>
@@ -1377,14 +1377,14 @@ SELECT depth, id, name, wbs FROM up;
 </div><div class="sub"><h3 id="94-in-an-srs-an-attribute-line-under-each-requirement">9.4 In an SRS: an attribute line under each requirement<a class="hlink" href="#94-in-an-srs-an-attribute-line-under-each-requirement" aria-label="Link to this section">#</a></h3>
 <p>Today a requirement reads:</p>
 <blockquote class="callout quote">
-<p><strong>SRS-BRK-021</strong> On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.</p>
+<p><strong>SW-SRS-BRK-021</strong> On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.</p>
 </blockquote>
 <p>A person can see it's safety-related and has a 20 ms deadline. ESAM can't do so reliably. Written for ESAM:</p>
 <blockquote class="callout quote">
-<p><strong>SRS-BRK-021</strong> On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.<br>Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2</p>
+<p><strong>SW-SRS-BRK-021</strong> On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.<br>Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2</p>
 </blockquote>
 <p>In the markdown file, the attribute line sits directly under the requirement, indented two spaces:</p>
-<div class="code"><div class="code-bar"><span>text</span><button class="copy" type="button">Copy</button></div><pre><code>- **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
+<div class="code"><div class="code-bar"><span>text</span><button class="copy" type="button">Copy</button></div><pre><code>- **SW-SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
   Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 </code></pre></div>
 <div class="tbl cols-3"><table>
@@ -1426,7 +1426,7 @@ SELECT depth, id, name, wbs FROM up;
 <p>ESAM reads these fields into the graph with the requirement, so &quot;which SwCI 1 requirements are verified only by inspection?&quot; becomes a lookup.</p>
 </div><div class="sub"><h3 id="95-in-an-std-fixed-fields-in-every-test-case">9.5 In an STD: fixed fields in every test case<a class="hlink" href="#95-in-an-std-fixed-fields-in-every-test-case" aria-label="Link to this section">#</a></h3>
 <div class="code"><div class="code-bar"><span>text</span><button class="copy" type="button">Copy</button></div><pre><code>TC-BRK-011 — Pressure release time on incipient wheel lock-up
-Verifies: SRS-BRK-011.
+Verifies: SW-SRS-BRK-011.
 Method: Test.
 Steps: …
 Pass criteria: …
@@ -1449,7 +1449,7 @@ Pass criteria: …
 </tr>
 <tr>
 <td data-label="#">2</td>
-<td data-label="Change">One requirement ID format per document type (<code>SRS-BRK-021</code>)</td>
+<td data-label="Change">One requirement ID format per document type (<code>SW-SRS-BRK-021</code>)</td>
 <td data-label="Why">Traceability breaks on mixed formats</td>
 </tr>
 <tr>
@@ -1513,7 +1513,7 @@ Pass criteria: …
 <td data-label="How ESAM answers it">Requirements with no test case verifying them</td>
 </tr>
 <tr>
-<td data-label="Question">What verifies SRS-BRK-011?</td>
+<td data-label="Question">What verifies SW-SRS-BRK-011?</td>
 <td data-label="How ESAM answers it">The test cases whose <code>Verifies:</code> line names it, and the STD each is in</td>
 </tr>
 <tr>
@@ -1530,12 +1530,12 @@ Pass criteria: …
 <ul>
 <li><strong>SE Cockpit Dashboard, Requirement coverage:</strong> per subsystem, how many requirements and how many are verified, plus the list of untested requirements. For SYNTH-LTV today: <strong>0 of 16 verified</strong>, because no test description exists yet. When the Brake ECU's STD is added, four of its nine requirements become verified.</li>
 <li><strong>SE Cockpit Graph tab:</strong> requirements sit under their SRS and test cases under their STD. Selecting a requirement shows what verifies it, or &quot;no test case verifies this&quot;.</li>
-<li><strong>Answers to questions:</strong> asked &quot;How is SRS-BRK-011 verified?&quot;, ESAM now checks the requirement itself, not just whether an STD exists, and reports <em>&quot;no test case verifies SRS-BRK-011&quot;</em> when that is the case. Once the STD exists, it names TC-BRK-011 and its document.</li>
+<li><strong>Answers to questions:</strong> asked &quot;How is SW-SRS-BRK-011 verified?&quot;, ESAM now checks the requirement itself, not just whether an STD exists, and reports <em>&quot;no test case verifies SW-SRS-BRK-011&quot;</em> when that is the case. Once the STD exists, it names TC-BRK-011 and its document.</li>
 </ul>
 <figure class="fig" id="fig-trace"><div class="fig-head"><span class="fig-kicker">Interactive</span><span class="fig-title">Requirement coverage, SYNTH-LTV</span></div><div class="fig-body"><div class="fig-ctl"><button class="std-toggle" type="button" aria-pressed="false"><span class="sw" aria-hidden="true"></span>STD-BRK-001 loaded</button><span class="big" data-tsum></span></div><div data-tgrid></div><div class="detail" data-tdetail>Select a requirement.</div></div><figcaption>Green: a test case's <code>Verifies:</code> line names it. Red outline: nothing verifies it yet.</figcaption></figure></div><div class="sub"><h3 id="104-what-it-depends-on">10.4 What it depends on<a class="hlink" href="#104-what-it-depends-on" aria-label="Link to this section">#</a></h3>
 <p>Traceability is only as good as the documents' structure:</p>
 <ul>
-<li>Requirement lines in the <code>- **SRS-BRK-011** …</code> form, one requirement per line item.</li>
+<li>Requirement lines in the <code>- **SW-SRS-BRK-011** …</code> form, one requirement per line item.</li>
 <li>Test cases as <code>TC-…</code> headings with a <code>Verifies:</code> line listing requirement IDs exactly as written in the SRS.</li>
 <li>Consistent IDs (<a class="xref" href="#96-checklist-in-priority-order" data-tip="§9.6 Checklist, in priority order">§9.6</a>). A <code>Verifies:</code> line that says &quot;SRS BRK 11&quot; links to nothing.</li>
 </ul>
@@ -1771,7 +1771,7 @@ safety_assessment:
 </tbody>
 </table></div>
 <p>Approving changes the baseline file (one line is added under <code>artifacts:</code>, and its comments and layout are kept) and copies the document into the documents folder. Review it with the baseline owner and put it under configuration control as usual. If an ingest has to be reversed, whoever runs ESAM can undo exactly that ingest (<code>crew.main undo &lt;run&gt;</code>).</p>
-<p><strong>Read the verification report</strong> after an approval. &quot;Findings closed&quot; is the point: for example, <em>&quot;Brake Control ECU has no STD&quot;</em> and <em>&quot;SRS-BRK-011: no test case verifies it&quot;</em> disappear once the test description is in.</p>
+<p><strong>Read the verification report</strong> after an approval. &quot;Findings closed&quot; is the point: for example, <em>&quot;Brake Control ECU has no STD&quot;</em> and <em>&quot;SW-SRS-BRK-011: no test case verifies it&quot;</em> disappear once the test description is in.</p>
 <figure class="fig" id="fig-review"><div class="fig-head"><span class="fig-kicker">Interactive</span><span class="fig-title">A document review, end to end</span></div><div class="fig-body"><ol class="pipe" data-pipe></ol><div class="detail" data-pipe-detail></div></div><figcaption>The agents stop at the approval request. Nothing enters the baseline until you approve.</figcaption></figure></div><div class="sub"><h3 id="125-drafting-an-srs">12.5 Drafting an SRS<a class="hlink" href="#125-drafting-an-srs" aria-label="Link to this section">#</a></h3>
 <p>Write a brief (<a class="xref" href="#111-what-you-provide-the-authoring-brief" data-tip="§11.1 What you provide: the authoring brief">§11.1</a>) and place it in <code>data/briefs/</code>. Then <em>Add a task</em> → <strong>Draft an SRS from a brief</strong> → pick it. When the run finishes, its row in <em>Recent runs</em> shows the reviewer's verdict, the check counts and a link to the <strong>evidence pack</strong>. Read <a class="xref" href="#115-the-evidence-pack" data-tip="§11.5 The evidence pack">§11.5</a> for what each file shows.</p>
 <p>A draft is a <strong>candidate</strong>. Fix the open items (often an SE decision the agents raised, such as a hazard the source document creates), then bring the draft in like any other document (<a class="xref" href="#124-bringing-in-a-new-document" data-tip="§12.4 Bringing in a new document">§12.4</a>).</p>
@@ -2119,7 +2119,7 @@ document.addEventListener('click', e => { if (e.target.closest('.std-toggle')) s
     ['Clean', 'Drop TOC, revision history, headers', 'Otherwise the table of contents matches every search.'],
     ['Split', 'Sections, then requirement / test IDs', 'One chunk per requirement or test case is far more useful than an arbitrary slice.'],
     ['Label', 'Prefix the full section path', 'On page 600, “the rate shall be 100 ms” means nothing without its label: <code>SDD-BRK-001 › 3.2 Wheel-slip control › 3.2.4 Pressure modulation</code>'],
-    ['Tag', 'Record IDs a chunk mentions', 'These become links in the graph: <code>verifies: SRS-BRK-012</code> means this test <i>verifies</i> that requirement.']];
+    ['Tag', 'Record IDs a chunk mentions', 'These become links in the graph: <code>verifies: SW-SRS-BRK-012</code> means this test <i>verifies</i> that requirement.']];
   ol.innerHTML = st.map((s, i) => `<li><button aria-pressed="${i === 0}" data-i="${i}">${s[0]}<small>${s[1]}</small></button></li>`).join('');
   const d = $('[data-chev-detail]'); const show = i => { d.innerHTML = `<b>${st[i][0]}.</b> ${st[i][2]}`; $$('button', ol).forEach((b, j) => b.setAttribute('aria-pressed', j === i)); };
   ol.addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(+b.dataset.i); }); show(0);
@@ -2281,13 +2281,13 @@ document.addEventListener('click', e => { if (e.target.closest('.std-toggle')) s
   const ol = $('[data-decide]'); if (!ol) return;
   function render() {
     ol.innerHTML = `
-      <li><span class="dot">?</span><div class="box q">“How is SRS-BRK-011 verified?”</div></li>
+      <li><span class="dot">?</span><div class="box q">“How is SW-SRS-BRK-011 verified?”</div></li>
       <li><span class="dot">1</span><div class="box"><b>Document type:</b> “verified” is a testing word → a test description, <b>STD</b> (ontology §8).</div></li>
-      <li><span class="dot">2</span><div class="box"><b>Subsystem:</b> SRS-BRK-011 is allocated to <code>SUB-BRK-ECU</code>.</div></li>
+      <li><span class="dot">2</span><div class="box"><b>Subsystem:</b> SW-SRS-BRK-011 is allocated to <code>SUB-BRK-ECU</code>.</div></li>
       <li><span class="dot">3</span><div class="box"><b>Baseline check:</b> does SUB-BRK-ECU have an STD? → <b>${std.on ? 'Yes: STD-BRK-001' : 'No'}</b></div></li>
       <li><span class="dot">→</span><div class="branch">
         <div class="br gapb ${std.on ? '' : 'on'}"><h4>Report the gap first</h4><p>“…the Brake ECU test description (STD) for subsystem SUB-BRK-ECU does not exist in the baseline yet… any detailed test sequence or thresholds would be an invention and must not be assumed.”</p></div>
-        <div class="br okb ${std.on ? 'on' : ''}"><h4>Answer, with a citation</h4><p>“The requirement SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … every one of the 200 releases … completes within 15 ms.”</p></div>
+        <div class="br okb ${std.on ? 'on' : ''}"><h4>Answer, with a citation</h4><p>“The requirement SW-SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … every one of the 200 releases … completes within 15 ms.”</p></div>
       </div></li>`;
   }
   std.subs.push(render); render();
@@ -2296,9 +2296,9 @@ document.addEventListener('click', e => { if (e.target.closest('.std-toggle')) s
 /* §10 traceability */
 (() => {
   const grid = $('[data-tgrid]'); if (!grid) return;
-  const R = { 'Brake ECU|SUB-BRK-ECU · SRS-BRK-001': ['SRS-BRK-010', 'SRS-BRK-011', 'SRS-BRK-012', 'SRS-BRK-020', 'SRS-BRK-021', 'SRS-BRK-022', 'SRS-BRK-030', 'SRS-BRK-031', 'SRS-BRK-032'],
-              'Driver cluster|SUB-DCL · SRS-DCL-001': ['SRS-DCL-010', 'SRS-DCL-011', 'SRS-DCL-020', 'SRS-DCL-021', 'SRS-DCL-022', 'SRS-DCL-030', 'SRS-DCL-031'] };
-  const V = { 'SRS-BRK-010': 'TC-BRK-010', 'SRS-BRK-011': 'TC-BRK-011', 'SRS-BRK-021': 'TC-BRK-021', 'SRS-BRK-030': 'TC-BRK-030' };
+  const R = { 'Brake ECU|SUB-BRK-ECU · SRS-BRK-001': ['SW-SRS-BRK-010', 'SW-SRS-BRK-011', 'SW-SRS-BRK-012', 'SW-SRS-BRK-020', 'SW-SRS-BRK-021', 'SW-SRS-BRK-022', 'SW-SRS-BRK-030', 'SW-SRS-BRK-031', 'SW-SRS-BRK-032'],
+              'Driver cluster|SUB-DCL · SRS-DCL-001': ['SW-SRS-DCL-010', 'SW-SRS-DCL-011', 'SW-SRS-DCL-020', 'SW-SRS-DCL-021', 'SW-SRS-DCL-022', 'SW-SRS-DCL-030', 'SW-SRS-DCL-031'] };
+  const V = { 'SW-SRS-BRK-010': 'TC-BRK-010', 'SW-SRS-BRK-011': 'TC-BRK-011', 'SW-SRS-BRK-021': 'TC-BRK-021', 'SW-SRS-BRK-030': 'TC-BRK-030' };
   const det = $('[data-tdetail]'); let sel = null;
   function render() {
     let tot = 0, ver = 0;

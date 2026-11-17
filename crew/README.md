@@ -190,7 +190,7 @@ Documents without `part` (two ICDs for one ECU) are simply two documents.
 |---|---|---|
 | `SYS-SRS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
 | `SW-SRS-BRK-060` | a **software** requirement | what the software itself must do |
-| `SRS-BRK-011` | a **software** requirement | the unmarked form used before the two were told apart; still read |
+| `SRS-BRK-011` | a **software** requirement | the unmarked form used before the two were told apart; still read, but the example documents no longer use it |
 
 ```
 - **SYS-SRS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
@@ -201,8 +201,8 @@ Documents without `part` (two ICDs for one ECU) are simply two documents.
 ```
 
 The two example specifications show both kinds: `data/documents/SRS-BRK-001.md` and `SRS-DCL-001.md` each end with
-a *System requirements* section (`SYS-SRS-BRK-040` … `043`, `SYS-SRS-DCL-040`, `041`), and their software
-requirements trace to them. `SYS-SRS-BRK-043` is deliberately traced to by nothing, so the flow-down gap shows.
+a *System requirements* section (`SYS-SRS-BRK-040` … `043`, `SYS-SRS-DCL-040`, `041`); their software requirements
+are `SW-SRS-BRK-010` … `032` and `SW-SRS-DCL-010` … `031`, and trace to them. `SYS-SRS-BRK-043` is deliberately traced to by nothing, so the flow-down gap shows.
 
 Each requirement in the graph carries `level` (and `level_source: id`). `Traces to:` from a software requirement
 to a system requirement becomes a `TRACES_TO` link. The review of an SRS lists the two levels apart with counts,

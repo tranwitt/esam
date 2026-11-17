@@ -15,7 +15,7 @@ offset. This module reads all of that:
   * headings (the built-in Heading 1-9 styles, styles based on them, and
     outline levels), the Title and Caption styles, list items;
   * tables, row by row and cell by cell;
-  * bold runs (so `**SRS-BRK-011**` requirement ids survive);
+  * bold runs (so `**SW-SRS-BRK-011**` requirement ids survive);
   * the text typed inside drawing shapes (text boxes);
   * embedded PNG and JPEG pictures, placed where they appear when Word
     recorded a position for them.

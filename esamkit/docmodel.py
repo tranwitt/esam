@@ -9,7 +9,7 @@ in the markdown conventions the rest of ESAM reads (SE manual §9):
     # <ID> — <name>                          the document title
     | Document | Type | Revision | Subsystem |   the header table
     ## 1. Section                             numbered sections
-    - **SRS-BRK-011** The software shall ...  one requirement per list item
+    - **SW-SRS-BRK-011** The software shall ...  one requirement per list item
     ## TC-BRK-011 — title  /  Verifies: ...   test cases
 
 so a Word document written the way the manual asks goes through the same

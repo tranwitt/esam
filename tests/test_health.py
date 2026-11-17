@@ -68,7 +68,7 @@ def test_integrity_blocks_when_graph_and_baseline_disagree(graph, data):
 
 def test_traceability_reports_unknown_requirement(graph, data, baseline, tmp_path):
     from esamkit.baseline import Baseline
-    (tmp_path / "STD-BRK-001.md").write_text("## TC-BRK-001 — t\nVerifies: SRS-BRK-011, SRS-BRK-999.\nMethod: Test.\n")
+    (tmp_path / "STD-BRK-001.md").write_text("## TC-BRK-001 — t\nVerifies: SW-SRS-BRK-011, SRS-BRK-999.\nMethod: Test.\n")
     overlay = Baseline(baseline.metadata, baseline.vertices, baseline.edges,
                        baseline.artifacts + [{"id": "STD-BRK-001", "name": "x", "type": "std", "revision": "A",
                                               "attached_to": "SUB-BRK-ECU", "file": "STD-BRK-001.md"}])
@@ -76,4 +76,4 @@ def test_traceability_reports_unknown_requirement(graph, data, baseline, tmp_pat
     _, c = run(graph, data)
     msgs = [f["where"] + ": " + f["message"] for f in c[4]["findings"]]
     assert "TC-BRK-001: verifies SRS-BRK-999, which no SRS defines" in msgs
-    assert not any(m.startswith("SRS-BRK-011:") for m in msgs)       # now verified
+    assert not any(m.startswith("SW-SRS-BRK-011:") for m in msgs)       # now verified

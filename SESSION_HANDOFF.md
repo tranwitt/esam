@@ -67,6 +67,11 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `test_confidence`) WITHOUT running them, and the documents must be re-ingested (`python lessons/03_vector_store/ingest.py`,
   then `python -m crew.main graph reload`). Lessons 05/06 retrieval and confidence results were not re-run with the
   longer documents. `tests/fixtures/word/SRS-BRK-001.doc` was regenerated from the new markdown.
+- **Example software ids renamed**: `SRS-BRK-0NN` / `SRS-DCL-0NN` are now `SW-SRS-BRK-0NN` / `SW-SRS-DCL-0NN` in the
+  two SRS documents, the staged STD (`Verifies:` lines), the manual (md + html), `docs/how_esam_finds_answers.html`,
+  `docs/build_manual_html.py`, lessons 05-08 and the tests; the three Word fixtures were regenerated. Unmarked ids
+  are still read as software (the authoring pipeline and `tests/fixtures/SRS-ENG-001_reference.md` still produce
+  `SRS-ENG-0NN`). Not re-run: the DB-backed tests, lessons 05/06, and the manual's HTML build.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

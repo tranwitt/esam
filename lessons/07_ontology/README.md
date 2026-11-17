@@ -45,7 +45,7 @@ checks (11 "missing") to **9 required, 5 present, 4 missing, 2 of them on safety
 1. Misspell an attribute in the baseline (`safty_critical: true`) and run the checker: a warning, where the
    loader would have dropped it silently.
 2. Set a document's `type: ssr` (the pre-MIL-STD-498 name): rejected, and the ID/type mismatch is reported.
-3. Ask `python lessons/05_hybrid/hybrid.py "Where is the QTP for SRS-BRK-011?"`: step 3b finds no document
+3. Ask `python lessons/05_hybrid/hybrid.py "Where is the QTP for SW-SRS-BRK-011?"`: step 3b finds no document
    type. Add `"QTP"` (qualification test procedure) to `document_types.std.synonyms`, ask again, and step 3b
    now needs an STD and reports it missing. Vocabulary changed, no code changed.
 4. Add a rule `{ when: [safety_critical], require: [ssdd] }`, restart the Cockpit, and watch the Dashboard

@@ -138,7 +138,7 @@ Size is not the problem. **How cleanly the document splits is.**
 | Clean | Drops the table of contents, revision history, lists of figures, and repeated headers and footers; accepts tracked changes | Otherwise the table of contents matches every search |
 | Split on structure | Cuts at section numbers first, then at **requirement IDs** (SRS, SDD) or **test case IDs** (test documents); only splits by length inside a long section | One chunk per requirement or test case is far more useful than an arbitrary slice |
 | Label | Prefixes every chunk with its full path, e.g. `SDD-BRK-001 › 3.2 Wheel-slip control › 3.2.4 Pressure modulation` | On page 600, "the rate shall be 100 ms" means nothing without its label |
-| Tag | Records the IDs a chunk mentions, e.g. `verifies: SRS-BRK-012` | These become links in the graph: this test *verifies* that requirement |
+| Tag | Records the IDs a chunk mentions, e.g. `verifies: SW-SRS-BRK-012` | These become links in the graph: this test *verifies* that requirement |
 
 **Requirements and design documents (SRS, SDD, SSDD)** are mostly prose and requirements. They split by section, then by requirement.
 
@@ -150,7 +150,7 @@ Size is not the problem. **How cleanly the document splits is.**
 |---|---|
 | Use real Word **heading styles** for every section | Bold or enlarged text used as fake headings |
 | Number sections consistently (`3.2.4`) | Unnumbered or hand-renumbered sections |
-| Write requirement and test IDs in one consistent format (`SRS-BRK-012`) | Mixed formats (`SRS BRK 12`, `Req 12`) |
+| Write requirement and test IDs in one consistent format (`SW-SRS-BRK-012`) | Mixed formats (`SRS BRK 12`, `Req 12`) |
 | Give each test case a fixed **"Verifies:"** field | Traceability buried in free text |
 | Put each requirement in its own paragraph | Several "shall" statements in one paragraph |
 | Keep tables as real Word tables | Tables pasted in as images |
@@ -359,7 +359,7 @@ A possible middle step is **Apache AGE**, a PostgreSQL extension that adds a gra
 
 ### 7.1 Why this matters
 
-A document search always returns *something*: the closest passage that exists. Ask "How is SRS-BRK-011 verified?" when no test description has been written, and the closest passage is the requirement itself. It mentions 15 ms and wheel lock-up, so it looks like an answer, and an AI model given it could write a plausible test procedure that nobody ever approved.
+A document search always returns *something*: the closest passage that exists. Ask "How is SW-SRS-BRK-011 verified?" when no test description has been written, and the closest passage is the requirement itself. It mentions 15 ms and wheel lock-up, so it looks like an answer, and an AI model given it could write a plausible test procedure that nobody ever approved.
 
 ESAM prevents this by checking the **baseline** before it answers. The baseline knows which documents each subsystem has, so ESAM can tell the difference between "the documents don't say" and "the document doesn't exist."
 
@@ -371,13 +371,13 @@ ESAM prevents this by checking the **baseline** before it answers. The baseline 
 
 ### 7.3 What it looks like
 
-Asked how SRS-BRK-011 is verified, before a test description exists:
+Asked how SW-SRS-BRK-011 is verified, before a test description exists:
 
-> *This question cannot be answered as requested because the Brake ECU test description (STD) for subsystem SUB-BRK-ECU does not exist in the baseline yet. … SRS-BRK-011 is defined as: "The software shall release brake pressure on a wheel within 15 ms of detecting incipient lock-up on that wheel." [SRS-BRK-001] … until that document exists, any detailed test sequence or thresholds would be an invention and must not be assumed.*
+> *This question cannot be answered as requested because the Brake ECU test description (STD) for subsystem SUB-BRK-ECU does not exist in the baseline yet. … SW-SRS-BRK-011 is defined as: "The software shall release brake pressure on a wheel within 15 ms of detecting incipient lock-up on that wheel." [SRS-BRK-001] … until that document exists, any detailed test sequence or thresholds would be an invention and must not be assumed.*
 
 The same question after STD-BRK-001 is added to the baseline and loaded:
 
-> *The requirement SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … Pass criteria: every one of the 200 releases (50 per wheel × 4 wheels) completes within 15 ms …*
+> *The requirement SW-SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … Pass criteria: every one of the 200 releases (50 per wheel × 4 wheels) completes within 15 ms …*
 
 ### 7.4 The confidence test
 
@@ -522,17 +522,17 @@ The first thing in every document, so ESAM can place it without guessing:
 
 Today a requirement reads:
 
-> **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
+> **SW-SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
 
 A person can see it's safety-related and has a 20 ms deadline. ESAM can't do so reliably. Written for ESAM:
 
-> **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
+> **SW-SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
 > Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 
 In the markdown file, the attribute line sits directly under the requirement, indented two spaces:
 
 ```
-- **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
+- **SW-SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
   Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 ```
 
@@ -550,7 +550,7 @@ ESAM reads these fields into the graph with the requirement, so "which SwCI 1 re
 
 ```
 TC-BRK-011 — Pressure release time on incipient wheel lock-up
-Verifies: SRS-BRK-011.
+Verifies: SW-SRS-BRK-011.
 Method: Test.
 Steps: …
 Pass criteria: …
@@ -563,7 +563,7 @@ Pass criteria: …
 | # | Change | Why |
 |---|---|---|
 | 1 | A header table on every document | ESAM places and checks the document without guessing |
-| 2 | One requirement ID format per document type (`SRS-BRK-021`) | Traceability breaks on mixed formats |
+| 2 | One requirement ID format per document type (`SW-SRS-BRK-021`) | Traceability breaks on mixed formats |
 | 3 | An attribute line under every requirement, using the ontology's values | Turns prose into facts ESAM can check and link |
 | 4 | Refer to things by ID ("per ICD-BRK-001 §3"), not by description ("per the brake interface document") | Every ID mention can become a link automatically |
 | 5 | A `Verifies:` field in every test case | Powers the traceability check (§5.2, check 4) |
@@ -591,7 +591,7 @@ Nothing is guessed. ESAM reads the formats this manual asks you to write, and ev
 | Question | How ESAM answers it |
 |---|---|
 | Which requirements have no test? | Requirements with no test case verifying them |
-| What verifies SRS-BRK-011? | The test cases whose `Verifies:` line names it, and the STD each is in |
+| What verifies SW-SRS-BRK-011? | The test cases whose `Verifies:` line names it, and the STD each is in |
 | How well is each subsystem covered? | Requirements allocated to it, and how many are verified |
 | Does any test cite a requirement that doesn't exist? | Reported when the STD is loaded (e.g. a typo `SRS-BRK-999`) |
 
@@ -599,13 +599,13 @@ Nothing is guessed. ESAM reads the formats this manual asks you to write, and ev
 
 - **SE Cockpit Dashboard, Requirement coverage:** per subsystem, how many requirements and how many are verified, plus the list of untested requirements. For SYNTH-LTV today: **0 of 16 verified**, because no test description exists yet. When the Brake ECU's STD is added, four of its nine requirements become verified.
 - **SE Cockpit Graph tab:** requirements sit under their SRS and test cases under their STD. Selecting a requirement shows what verifies it, or "no test case verifies this".
-- **Answers to questions:** asked "How is SRS-BRK-011 verified?", ESAM now checks the requirement itself, not just whether an STD exists, and reports *"no test case verifies SRS-BRK-011"* when that is the case. Once the STD exists, it names TC-BRK-011 and its document.
+- **Answers to questions:** asked "How is SW-SRS-BRK-011 verified?", ESAM now checks the requirement itself, not just whether an STD exists, and reports *"no test case verifies SW-SRS-BRK-011"* when that is the case. Once the STD exists, it names TC-BRK-011 and its document.
 
 ### 10.4 What it depends on
 
 Traceability is only as good as the documents' structure:
 
-- Requirement lines in the `- **SRS-BRK-011** …` form, one requirement per line item.
+- Requirement lines in the `- **SW-SRS-BRK-011** …` form, one requirement per line item.
 - Test cases as `TC-…` headings with a `Verifies:` line listing requirement IDs exactly as written in the SRS.
 - Consistent IDs (§9.6). A `Verifies:` line that says "SRS BRK 11" links to nothing.
 
@@ -754,7 +754,7 @@ The last column is what the document belongs to: a subsystem, or for a system-le
 
 Approving changes the baseline file (one line is added under `artifacts:`, and its comments and layout are kept) and copies the document into the documents folder. Review it with the baseline owner and put it under configuration control as usual. If an ingest has to be reversed, whoever runs ESAM can undo exactly that ingest (`crew.main undo <run>`).
 
-**Read the verification report** after an approval. "Findings closed" is the point: for example, *"Brake Control ECU has no STD"* and *"SRS-BRK-011: no test case verifies it"* disappear once the test description is in.
+**Read the verification report** after an approval. "Findings closed" is the point: for example, *"Brake Control ECU has no STD"* and *"SW-SRS-BRK-011: no test case verifies it"* disappear once the test description is in.
 
 ### 12.5 Drafting an SRS
 
