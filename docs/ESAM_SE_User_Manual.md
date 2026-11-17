@@ -581,7 +581,7 @@ Until now the graph knew about **documents**: the Brake ECU has an SRS. It now a
 
 | Item | Read from | Linked to |
 |---|---|---|
-| **Requirement** | Each requirement line in an SRS. Its id says what it is: `SYS-SRS-…` a **system** requirement, `SW-SRS-…` (or the unmarked `SRS-…`) a **software** requirement; the two are counted and shown apart, and an id that disagrees with the wording is reported (§9.4) | *specified in* its SRS; *allocated to* the SRS's subsystem; a software requirement **traces to** each system requirement on its `Traces to:` line |
+| **Requirement** | Each requirement line in an SRS. Its id says what it is: `SYS-SRS-…` a **system** requirement, `SW-SRS-…` a **software** requirement (an id with no marker is read as system); the two are counted and shown apart, and an id that disagrees with the wording is reported (§9.4) | *specified in* its SRS; *allocated to* the SRS's subsystem; a software requirement **traces to** each system requirement on its `Traces to:` line |
 | **Test case** | Each `TC-…` heading in an STD, with its fixed fields (§9.5) | *specified in* its STD; **verifies** each requirement on its `Verifies:` line |
 
 Nothing is guessed. ESAM reads the formats this manual asks you to write, and every item remembers which document it came from. When a new revision of a document is loaded, everything the old revision contributed is replaced, so a deleted requirement or test case doesn't linger.

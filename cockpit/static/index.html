@@ -358,7 +358,7 @@ footer { color: var(--ink-2); font-size: 12px; }
       <div class="panel">
         <h2>Requirement coverage</h2>
         <p class="sub">Requirements are read from each SRS. Each is a system requirement (id <code>SYS-SRS-…</code>: what the subsystem as a
-          whole must do) or a software requirement (id <code>SW-SRS-…</code>, or the unmarked <code>SRS-…</code>: what the software must do); the two are counted apart. Test cases are read
+          whole must do) or a software requirement (id <code>SW-SRS-…</code>: what the software must do); an id with no marker is read as a system requirement; the two are counted apart. Test cases are read
           from each STD; a test case covers a requirement through its <em>Verifies:</em> line, and a requirement with no test case
           verifying it is untested. A software requirement points at the system requirement it derives from with its
           <em>Traces to:</em> line.</p>
@@ -479,9 +479,10 @@ const TYPES = {
   TestCase:       { code: "TC",  cls: "tc",  name: "Test case",      rank: 8, r: 5 },
 };
 // Every requirement read from an SRS is a system or a software requirement, and its id says which
-// (SYS-SRS-… / SW-SRS-…, plain SRS-… is software): props.level; props.level_source says how it was decided.
+// (SYS-SRS-… / SW-SRS-…; an unmarked SRS-… is taken as system): props.level; props.level_source says how it was decided.
 const LEVELS = { system: { code: "SYS REQ", name: "System requirement" }, software: { code: "SW REQ", name: "Software requirement" } };
-const levelOf = (v) => (v && v.label === "Requirement" ? (v.props.level || "software") : null);
+const levelById = (id) => (String(id).startsWith("SW-") ? "software" : "system");       // no marker: system
+const levelOf = (v) => (v && v.label === "Requirement" ? (v.props.level || levelById(v.eid)) : null);
 const typeOf = (v) => {
   const t = TYPES[v.label] || { code: v.label.slice(0, 3).toUpperCase(), cls: "top", name: v.label, rank: 9, r: 8 };
   const lv = LEVELS[levelOf(v)];
@@ -717,10 +718,10 @@ function renderTrace() {
   const tr = M.data.trace;
   if (!tr) { $("#tracecov").replaceChildren(h("tbody", {}, h("tr", {}, h("td.note", {}, "Not available in this snapshot.")))); $("#untested").hidden = true; return; }
   // System requirements and software requirements (both from the SRS, see props.level) are counted apart.
-  // A snapshot made before the split has only the totals: those were all software requirements.
+  // A snapshot made before the split has only the totals: its ids were unmarked, which reads as system.
   const rows = tr.summary.filter((r) => r.requirements > 0).map((r) => ({ ...r,
-    sys: r.system_requirements ?? 0, sysV: r.system_verified ?? 0,
-    sw: r.software_requirements ?? r.requirements, swV: r.software_verified ?? r.verified }));
+    sys: r.system_requirements ?? r.requirements, sysV: r.system_verified ?? r.verified,
+    sw: r.software_requirements ?? 0, swV: r.software_verified ?? 0 }));
   const sum = (k) => rows.reduce((n, r) => n + r[k], 0);
   const cell = (have, of) => (of ? h("td", {}, `${have} of ${of} `, h("span.bar", { role: "img", "aria-label": `${Math.round(100 * have / of)}% verified` },
     h("i", { style: `width:${(100 * have / of).toFixed(1)}%` }))) : h("td", {}, h("span.note", {}, "none")));
@@ -746,7 +747,7 @@ function renderTrace() {
   const nSys = un.filter((u) => u.level === "system").length;
   $("#untested").replaceChildren(h("summary", {}, `${un.length} untested requirement${un.length === 1 ? "" : "s"}`
     + (un.length && tr.summary.some((r) => r.system_requirements) ? ` (${nSys} system, ${un.length - nSys} software)` : "")),
-    h("ul", {}, un.map((u) => h("li", {}, h("span.chip.t-req", { title: LEVELS[u.level || "software"].name }, LEVELS[u.level || "software"].code), " ",
+    h("ul", {}, un.map((u) => h("li", {}, h("span.chip.t-req", { title: LEVELS[u.level || levelById(u.eid)].name }, LEVELS[u.level || levelById(u.eid)].code), " ",
       nodeLinkIf(u.eid), " ", h("span.note", {}, `${u.name} (${u.subsystem}, ${u.document})`)))));
 }
 
@@ -1073,7 +1074,7 @@ function renderDetails() {
     const lv = levelOf(v), up = M.traces.filter((e) => e.from_eid === v.eid), down = M.traces.filter((e) => e.to_eid === v.eid);
     const reqItem = (id) => h("li", {}, nodeLink(id), " ", h("span.note", {}, M.byId.get(id)?.props.name || ""));
     parts.push(h("h4", {}, "Level"), h("p", {}, h("span.chip.t-req", {}, LEVELS[lv].code), " ", LEVELS[lv].name,
-      h("span.note", {}, " (" + ({ id: "its id says so: SYS-SRS-… system, SW-SRS-… or SRS-… software", stated: "stated on its Level: line", wording: "from the subject of its \"shall\"", assumed: "assumed: neither stated nor clear from its wording" }[v.props.level_source] || "not recorded; reload the graph") + ")")));
+      h("span.note", {}, " (" + ({ id: "its id says so: SYS-SRS-… system, SW-SRS-… software; no marker is read as system", stated: "stated on its Level: line", wording: "from the subject of its \"shall\"", assumed: "assumed: neither stated nor clear from its wording" }[v.props.level_source] || "not recorded; reload the graph") + ")")));
     if (up.length) parts.push(h("h4", {}, "Traces to"), h("ul", {}, up.map((e) => reqItem(e.to_eid))));
     else if (lv === "software" && [...M.byId.values()].some((x) => levelOf(x) === "system"))
       parts.push(h("h4", {}, "Traces to"), h("p", {}, h("span.note", {}, "no system requirement")));

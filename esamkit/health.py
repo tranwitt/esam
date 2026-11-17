@@ -28,7 +28,7 @@ from pathlib import Path
 
 import yaml
 
-from .traceability import _ID
+from .traceability import _ID, level_of_id
 from .config import Settings, settings
 from .graphstores.base import GraphStore
 from .ontology import Ontology, check_baseline, default_ontology
@@ -84,7 +84,7 @@ def health_report(graph: GraphStore, onto: Ontology, baseline_data: dict, docume
     # 4. Traceability
     reqs = {e for e, v in V.items() if v["label"] == "Requirement"}
     req_id = re.compile(onto.classes["Requirement"]["id_pattern"])
-    f4 = [_f(r["eid"], f"{r.get('level') or 'software'} requirement: no test case verifies it "
+    f4 = [_f(r["eid"], f"{r.get('level') or level_of_id(r['eid']) or 'system'} requirement: no test case verifies it "
                        f"({r['subsystem']}, {r['document']})", sc(r["subsystem"]))
           for r in graph.untested_requirements()]
     for e, v in sorted(V.items()):

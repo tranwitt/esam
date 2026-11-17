@@ -72,6 +72,14 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `docs/build_manual_html.py`, lessons 05-08 and the tests; the three Word fixtures were regenerated. Unmarked ids
   are still read as software (the authoring pipeline and `tests/fixtures/SRS-ENG-001_reference.md` still produce
   `SRS-ENG-0NN`). Not re-run: the DB-backed tests, lessons 05/06, and the manual's HTML build.
+- **Unmarked ids are system first; Pipeline B follows the convention** (ontology v0.11, `unmarked: system`): an
+  `SRS-<code>-0NN` id is read as a system requirement (was software); requirements in an old graph with no `level`
+  are read from the id the same way (SQL, Cockpit, health, `verified_by`). `check_srs` now reports rule
+  `requirement level` (id vs `Level:` = error, id vs wording = warning, unmarked = warning) and `flow-down`,
+  accepts a trace to a requirement of the same draft, and returns `level` per requirement and `levels`; the CSV has a
+  `level` column. Tasks `b2_draft_srs` / `b3_verify_srs` tell the agents the two id forms. The reference draft is
+  `SW-SRS-ENG-0NN` plus one `SYS-SRS-ENG-040`. NOT run: a real `author` run (no CrewAI or model here), so whether
+  the model follows the new id instructions is unverified; the SQL is unverified as before.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

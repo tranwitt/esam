@@ -17,7 +17,8 @@ requirement (what the software itself must do). Both are written in the SRS
 and the ID says which (the ontology's `requirement_classification`):
 
     SYS-SRS-BRK-050   system requirement
-    SW-SRS-BRK-060    software requirement   (plain SRS-BRK-011, the earlier form, is software too)
+    SW-SRS-BRK-060    software requirement
+    SRS-BRK-011       no marker: taken as a system requirement first (the ontology's `unmarked`)
 
 Each carries `level` and `level_source` ("id"). The wording is only a
 cross-check: a `Level:` on the attribute line, or the subject of the
@@ -96,7 +97,7 @@ def _short(text: str, n: int = 90) -> str:
 
 LEVELS = ("system", "software")
 _LEVEL_WORDS = {"system": "system", "sys": "system", "software": "software", "sw": "software"}
-DEFAULT_CLASSIFICATION = {"id_marker": {"system": "SYS", "software": "SW"}, "unmarked": "software", "default": "software", "subjects": {
+DEFAULT_CLASSIFICATION = {"id_marker": {"system": "SYS", "software": "SW"}, "unmarked": "system", "default": "software", "subjects": {
     "software": ["software", "firmware", "csci", "application", "program", "code", "algorithm", "task"],
     "system": ["system", "subsystem", "vehicle", "ecu", "unit", "module", "controller", "hardware", "equipment"]}}
 
@@ -138,7 +139,7 @@ def id_parts(requirement_id: str, rules: dict | None = None) -> tuple[str | None
 
 def level_of_id(requirement_id: str, rules: dict | None = None) -> str | None:
     """The level a requirement id announces: SYS-SRS-… system, SW-SRS-… software,
-    plain SRS-… the ontology's `unmarked` (software). None when it is not an SRS id."""
+    plain SRS-… the ontology's `unmarked` (system). None when it is not an SRS id."""
     rules = rules or classification_rules()
     marker, plain = id_parts(requirement_id, rules)
     if marker:

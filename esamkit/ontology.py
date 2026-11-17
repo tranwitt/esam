@@ -85,7 +85,7 @@ class Ontology:
         the cross-check (and the fallback for an id that is not an SRS- id)."""
         rc = self.data.get("requirement_classification") or {}
         return {"id_marker": {k: str(v).upper() for k, v in (rc.get("id_marker") or {}).items()},
-                "unmarked": rc.get("unmarked") or "software",
+                "unmarked": rc.get("unmarked") or "system",
                 "default": rc.get("default") or "software",
                 "subjects": {k: [str(w).lower() for w in v or []] for k, v in (rc.get("subjects") or {}).items()}}
 

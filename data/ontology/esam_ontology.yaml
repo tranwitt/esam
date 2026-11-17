@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.10"
+  version: "0.11"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -151,13 +151,13 @@ classes:
   # not written in the baseline: esamkit/traceability.py. Each records the
   # document it came from, so a new revision replaces what the old one gave.
   Requirement:
-    description: "One 'shall' statement in an SRS. Its id says whether it is a system requirement ('- **SYS-SRS-…**') or a software requirement ('- **SW-SRS-…**', or the unmarked '- **SRS-…**')."
+    description: "One 'shall' statement in an SRS. Its id says whether it is a system requirement ('- **SYS-SRS-…**', or the unmarked '- **SRS-…**') or a software requirement ('- **SW-SRS-…**')."
     id_pattern: '^((SYS|SW)-)?SRS-[A-Z0-9]+-0[1-9]\d$'
     source: document
     attributes:
       text: { type: text, required: true }
       # system | software, and how that was decided (see requirement_classification):
-      #   id       from its id: SYS-SRS-… is a system requirement, SW-SRS-… (or plain SRS-…) a software requirement
+      #   id       from its id: SYS-SRS-… (or plain SRS-…) is a system requirement, SW-SRS-… a software requirement
       #   stated / wording / assumed   only for an id that is not an SRS- id (which the review reports)
       level: { type: enum, values: requirement_level, required: true }
       level_source: { type: text, description: "id | stated | wording | assumed" }
@@ -279,7 +279,8 @@ placement:
 #       Verification: T | Traces to: SYS-SRS-BRK-050
 #
 # `id_marker` is that marker for each level. An id with no marker
-# (SRS-BRK-011, the form used before the two were told apart) is `unmarked`.
+# (SRS-BRK-011) is taken as `unmarked` says: a system requirement, until it is
+# marked SW-. The review asks for the marker when its wording reads as software.
 # To use other markers change them here and in classes.Requirement.id_pattern.
 #
 # The rest is a CROSS-CHECK, so a requirement numbered as the wrong kind is
@@ -296,7 +297,7 @@ requirement_classification:
   id_marker:
     system: SYS
     software: SW
-  unmarked: software
+  unmarked: system
   default: software
   subjects:
     software: [software, firmware, csci, csc, application, program, code, algorithm, task, routine, function block]

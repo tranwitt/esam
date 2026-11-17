@@ -49,8 +49,9 @@ a2_document_review:
     verified elsewhere, and the subsystem's requirements that remain untested
     after this document. For an SRS, every requirement is a system
     requirement (id SYS-SRS-..., what the subsystem as a whole must do) or a
-    software requirement (id SW-SRS-..., or an unmarked SRS-...: what the
-    software must do); the id decides. Report the two as separate lists with their counts (levels).
+    software requirement (id SW-SRS-..., what the software must do); the id
+    decides, and an id with no marker (SRS-...) is read as a system
+    requirement. Report the two as separate lists with their counts (levels).
     Report every issue where an id disagrees with the requirement's Level:
     line or its wording, giving the id it should have, and every id that
     is not an SRS- id. Say which system requirement each software
@@ -185,16 +186,31 @@ b2_draft_srs:
        requirements" (3.3.1 and 3.10.1–3.10.4 as "####"), "## 4 Qualification
        provisions", "## 5 Requirements traceability", "## 6 Notes". A paragraph with
        no requirements says "No requirements." or "This paragraph has been tailored out."
-    3. Each requirement on one line "- **<id>** <one sentence with one 'shall'>", ids
-       numbered from 010 in steps of 1 or 10 (SRS-ENG-010, SRS-ENG-011, … SRS-ENG-099;
-       never SRS-ENG-001 to -009, which are document numbers), with its attribute line
-       under it, indented two spaces, for example:
-         - **SRS-ENG-020** While ABS active is 01 in EBC1, the software shall inhibit the engine compression brake.
-           Safety: SwCI 2 | Verification: T | Traces to: SSF-ENG-01, ICD-ENG-001 §2.1 | Basis: MIL-STD-882E 4.4.2
+    3. Each requirement on one line "- **<id>** <one sentence with one 'shall'>", with
+       its attribute line under it, indented two spaces. The id says what kind of
+       requirement it is, and the sentence must agree with it:
+         SYS-SRS-ENG-0NN  a SYSTEM requirement: what the subsystem as a whole must do,
+                          whatever mix of hardware and software does it. Its subject is
+                          the unit ("The Engine Control Module shall ...").
+         SW-SRS-ENG-0NN   a SOFTWARE requirement: what the software itself must do. Its
+                          subject is the software ("... the software shall ...").
+       Write a system requirement only where a source or the brief states one; do not
+       invent one to have a parent. Every software requirement that implements a
+       system requirement of this document lists that id in its Traces to. Numbers
+       run from 010 in steps of 1 or 10 and are not reused between the two kinds
+       (SYS-SRS-ENG-010, SW-SRS-ENG-020, ... -099; never -001 to -009, which are
+       document numbers). Use the document's own code in place of ENG. An id with
+       no SYS- or SW- marker is read as a system requirement and reported: always
+       write the marker. For example:
+         - **SYS-SRS-ENG-010** The Engine Control Module shall withdraw engine braking while the brake ECU reports anti-lock control active.
+           Verification: T | Traces to: ICD-ENG-001 §2.1
+         - **SW-SRS-ENG-020** While ABS active is 01 in EBC1, the software shall inhibit the engine compression brake.
+           Safety: SwCI 2 | Verification: T | Traces to: SSF-ENG-01, ICD-ENG-001 §2.1, SYS-SRS-ENG-010 | Basis: MIL-STD-882E 4.4.2
        Fields: Safety (SwCI n), Timing (value with units), Verification, Traces to, Basis.
        Safety only for safety requirements (all of 3.7), and equal to the SwCI of the
-       SSF it traces to. Verification is I, A, D or T. Traces to lists SSF ids and/or
-       source sections written "ICD-ENG-001 §2.1". Basis lists ONLY standard
+       SSF it traces to. Verification is I, A, D or T. Traces to lists SSF ids,
+       source sections written "ICD-ENG-001 §2.1", and system requirement ids of this
+       document. Basis lists ONLY standard
        clauses that standard_clause returns (never a source document); every
        safety requirement cites MIL-STD-882E.
     4. Every SSF is implemented by at least one requirement; every source section
@@ -216,6 +232,11 @@ b3_verify_srs:
     requirement, not merely exists; (3) judge it against the ISO/IEC/IEEE 29148
     characteristics by name (necessary, unambiguous, singular, verifiable,
     feasible, correct): these are names only, the standard's text is not held.
+    (4) check its kind: a SYS-SRS-... id states what the unit as a whole must
+    do, a SW-SRS-... id what the software must do; where the id and the
+    sentence disagree, renumber or reword it, and give any unmarked id its
+    marker. Say for each software requirement which system requirement it
+    traces to, and list the system requirements nothing traces to.
     Where a requirement is wrong, uncited or unsupported, correct it or remove
     it with save_draft (never add content without a source), then run
     check_draft again. Flag any hazard the requirements create or leave open.

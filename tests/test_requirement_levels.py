@@ -1,6 +1,6 @@
 """Every requirement read from an SRS is a system requirement or a software
-requirement, and its id says which: SYS-SRS-… system, SW-SRS-… (or the
-unmarked SRS-…) software. A `Level:`
+requirement, and its id says which: SYS-SRS-… system, SW-SRS-… software; an
+id with no marker (SRS-…) is read as a system requirement first. A `Level:`
 line or wording that disagrees with the id is reported. A software
 requirement traces up to a system requirement."""
 
@@ -44,13 +44,13 @@ SRS2 = """# SRS-BRK-002 — Brake Control ECU Requirements, Part 2
 - **SW-SRS-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
   Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-050
 
-- **SRS-BRK-061** On a valve fault, the ECU software shall set the EBC1 fault bit within 100 ms.
+- **SW-SRS-BRK-061** On a valve fault, the ECU software shall set the EBC1 fault bit within 100 ms.
   Verification: T | Traces to: SYS-SRS-BRK-052, ICD-BRK-001
 
-- **SRS-BRK-062** Fault codes shall be logged to non-volatile memory.
+- **SW-SRS-BRK-062** Fault codes shall be logged to non-volatile memory.
   Level: Software | Verification: I | Traces to: SSF-BRK-02, SYS-SRS-BRK-099
 
-- **SRS-BRK-063** Wheel speed shall be sampled at 1 kHz.
+- **SW-SRS-BRK-063** Wheel speed shall be sampled at 1 kHz.
   Verification: T
 """
 SRS2_ENTRY = {"id": "SRS-BRK-002", "name": "Brake Control ECU Requirements, Part 2", "type": "srs",
@@ -111,7 +111,7 @@ def loaded(s):
 def test_the_rule_is_the_ontologys(onto):
     import re
     rc = onto.requirement_classification()
-    assert rc["id_marker"] == {"system": "SYS", "software": "SW"} and rc["unmarked"] == rc["default"] == "software"
+    assert rc["id_marker"] == {"system": "SYS", "software": "SW"} and rc["unmarked"] == "system" and rc["default"] == "software"
     assert "software" in rc["subjects"]["software"] and "ecu" in rc["subjects"]["system"]
     assert set(onto.value_sets["requirement_level"]) == {"system", "software"} and onto.check_self() == []
     assert "sss" not in onto.document_types                                   # requirements come from the SRS only
@@ -129,7 +129,7 @@ def test_the_rule_is_the_ontologys(onto):
 
 @pytest.mark.parametrize("rid,expected", [("SYS-SRS-BRK-050", "system"), ("SW-SRS-BRK-060", "software"), ("sys-srs-brk-050", "system"),
                                           ("SRS-SYS-BRK-050", None),                         # the marker goes in front
-                                          ("SRS-BRK-011", "software"),                       # unmarked: the earlier form
+                                          ("SRS-BRK-011", "system"),                         # no marker: a system requirement first
                                           ("SYS-BRK-050", None), ("REQ-BRK-050", None), ("ICD-BRK-001", None),
                                           ("HW-SRS-BRK-050", None), ("TC-BRK-011", None)])
 def test_the_id_says_the_level(rid, expected):
@@ -175,7 +175,7 @@ def test_every_requirement_of_an_srs_gets_its_level_from_its_id():
     reqs = {v.eid: v.props for v in read_requirements(SRS2, "SRS-BRK-002", "SUB-BRK-ECU").vertices}
     assert {k: p["level"] for k, p in reqs.items()} == {
         "SYS-SRS-BRK-050": "system", "SYS-SRS-BRK-051": "system", "SYS-SRS-BRK-052": "system",
-        "SW-SRS-BRK-060": "software", "SRS-BRK-061": "software", "SRS-BRK-062": "software", "SRS-BRK-063": "software"}
+        "SW-SRS-BRK-060": "software", "SW-SRS-BRK-061": "software", "SW-SRS-BRK-062": "software", "SW-SRS-BRK-063": "software"}
     assert {p["level_source"] for p in reqs.values()} == {"id"}
     assert all("level_expected" not in p and "level_as_written" not in p for p in reqs.values())      # ids and wording agree
     assert reqs["SYS-SRS-BRK-051"]["safety"] == "SwCI 1" and reqs["SYS-SRS-BRK-051"]["verification"] == ["T"]    # the other attributes still read
@@ -209,8 +209,8 @@ def test_software_requirements_trace_up_to_system_requirements(s):
     traces = sorted((e["from_eid"], e["to_eid"]) for e in g.e.values() if e["type"] == "TRACES_TO")
     # only parents that ARE requirements: not the ICD, not the safety function, not the one nobody states
     assert [x for x in traces if x[1].startswith("SYS-SRS-BRK-05")] == [
-        ("SRS-BRK-061", "SYS-SRS-BRK-052"), ("SW-SRS-BRK-060", "SYS-SRS-BRK-050")] and res["traces"] == 12
-    assert g.v["SRS-BRK-062"]["props"]["traces_to"] == ["SSF-BRK-02", "SYS-SRS-BRK-099"]              # kept as written
+        ("SW-SRS-BRK-060", "SYS-SRS-BRK-050"), ("SW-SRS-BRK-061", "SYS-SRS-BRK-052")] and res["traces"] == 12
+    assert g.v["SW-SRS-BRK-062"]["props"]["traces_to"] == ["SSF-BRK-02", "SYS-SRS-BRK-099"]              # kept as written
     assert g.v["SYS-SRS-BRK-050"]["props"]["level"] == "system" and g.v["SW-SRS-BRK-060"]["props"]["level"] == "software"
     # both levels are the subsystem's: the SRS is attached to it
     assert {e["to_eid"] for e in g.e.values() if e["type"] == "ALLOCATED_TO" and e["from_eid"].startswith("SYS-SRS-BRK-05")} == {"SUB-BRK-ECU"}
@@ -231,35 +231,39 @@ def test_the_review_lists_the_two_levels_apart(s):
     assert [(p["id"], p["exists"], p["level"]) for p in reqs["SW-SRS-BRK-060"]["traces_to"]] == [("SYS-SRS-BRK-050", True, "system")]
     assert reqs["SW-SRS-BRK-060"]["traces_to"][0]["text"].startswith("The Brake Control ECU shall prevent sustained lock-up")
     # which system requirements the software has picked up
-    assert reqs["SYS-SRS-BRK-050"]["traced_by"] == ["SW-SRS-BRK-060"] and reqs["SYS-SRS-BRK-052"]["traced_by"] == ["SRS-BRK-061"]
+    assert reqs["SYS-SRS-BRK-050"]["traced_by"] == ["SW-SRS-BRK-060"] and reqs["SYS-SRS-BRK-052"]["traced_by"] == ["SW-SRS-BRK-061"]
     assert reqs["SYS-SRS-BRK-051"]["traced_by"] == [] and "traced_by" not in reqs["SW-SRS-BRK-060"]
-    assert rev["issues"] == ["SRS-BRK-062: traces to SYS-SRS-BRK-099, which is not a requirement in this document or the graph"]
+    assert rev["issues"] == ["SW-SRS-BRK-062: traces to SYS-SRS-BRK-099, which is not a requirement in this document or the graph"]
 
 
 def test_the_review_reports_an_id_that_disagrees_with_the_requirement(s):
     g, _, _ = loaded(s)
     text = (SRS2.replace("- **SYS-SRS-BRK-050** The Brake Control ECU shall", "- **SW-SRS-BRK-050** The Brake Control ECU shall")   # worded as system
-                .replace("- **SYS-SRS-BRK-051**", "- **SRS-BRK-051**")                                                     # Level: system, unmarked id
+                .replace("- **SYS-SRS-BRK-051**", "- **SRS-BRK-051**")                                                     # unmarked, Level: system
                 .replace("- **SW-SRS-BRK-060** The software shall", "- **SYS-SRS-BRK-060** The software shall")            # worded as software
-                .replace("- **SRS-BRK-063**", "- **REQ-BRK-063**")                                                         # not an SRS- id
+                .replace("- **SW-SRS-BRK-061** On a valve fault, the ECU software shall", "- **SRS-BRK-061** On a valve fault, the ECU software shall")   # unmarked, worded as software
+                .replace("- **SW-SRS-BRK-063**", "- **REQ-BRK-063**")                                                      # not an SRS id
                 .replace("  Level: Software | Verification: I", "  Level: firmware | Verification: I"))
     rev = review_document(text, SRS2_ENTRY, g, s)
     reqs = {r["id"]: (r["level"], r["level_source"]) for r in rev["requirements"]}
     assert reqs["SW-SRS-BRK-050"] == ("software", "id") and reqs["SYS-SRS-BRK-060"] == ("system", "id")      # the id decides
-    assert reqs["SRS-BRK-051"] == ("software", "id") and reqs["REQ-BRK-063"] == ("software", "assumed")
+    # no marker: a system requirement first
+    assert reqs["SRS-BRK-051"] == ("system", "id") and reqs["SRS-BRK-061"] == ("system", "id")
+    assert reqs["REQ-BRK-063"] == ("software", "assumed")
     issues = rev["issues"]
     assert ('SW-SRS-BRK-050: the id says software requirement, but its wording reads as a system requirement '
             '("the brake control ecu shall"). If it is a system requirement, number it SYS-SRS-BRK-050') in issues
-    assert ("SRS-BRK-051: the id says software requirement, but its attribute line says 'Level: system'. "
-            "If it is a system requirement, number it SYS-SRS-BRK-051") in issues
+    assert not any(i.startswith("SRS-BRK-051:") for i in issues)                # unmarked, and it IS a system requirement: nothing to say
+    assert ('SRS-BRK-061: the id has no SYS- or SW- marker, so it is read as a system requirement, but its wording reads '
+            'as a software requirement ("the ecu software shall"). If it is a software requirement, number it SW-SRS-BRK-061') in issues
     assert ('SYS-SRS-BRK-060: the id says system requirement, but its wording reads as a software requirement '
             '("the software shall"). If it is a software requirement, number it SW-SRS-BRK-060') in issues
     assert ("REQ-BRK-063: the id does not say whether this is a system or a software requirement: use SYS-SRS-<code>-0NN "
             "(system) or SW-SRS-<code>-0NN (software). Taken as software (assumed)") in issues
-    assert "SRS-BRK-062: Level: 'firmware' is not 'system' or 'software'" in issues
+    assert "SW-SRS-BRK-062: Level: 'firmware' is not 'system' or 'software'" in issues
     # a system requirement that traces DOWN to a software requirement
-    down = SRS2.replace("  Timing: 500 ms max | Verification: T\n", "  Timing: 500 ms max | Verification: T | Traces to: SRS-BRK-061\n")
-    assert any(i.startswith("SYS-SRS-BRK-052: a system requirement traces to the software requirement SRS-BRK-061")
+    down = SRS2.replace("  Timing: 500 ms max | Verification: T\n", "  Timing: 500 ms max | Verification: T | Traces to: SW-SRS-BRK-061\n")
+    assert any(i.startswith("SYS-SRS-BRK-052: a system requirement traces to the software requirement SW-SRS-BRK-061")
                for i in review_document(down, SRS2_ENTRY, g, s)["issues"])
 
 
@@ -284,7 +288,7 @@ def test_the_health_report_names_the_level_and_a_parent_nobody_states(s, onto):
     assert found["SYS-SRS-BRK-050"].startswith("system requirement: no test case verifies it (SUB-BRK-ECU, SRS-BRK-002)")
     assert found["SW-SRS-BRK-060"].startswith("software requirement: no test case verifies it (SUB-BRK-ECU, SRS-BRK-002)")
     msgs = [f"{f['where']}: {f['message']}" for f in next(c for c in rep["checks"] if c["id"] == 4)["findings"]]
-    assert "SRS-BRK-062: traces to SYS-SRS-BRK-099, which no SRS defines" in msgs
+    assert "SW-SRS-BRK-062: traces to SYS-SRS-BRK-099, which no SRS defines" in msgs
     assert not any("SSF-BRK-02" in m or "ICD-BRK-001" in m for m in msgs)      # not requirement ids: not this check's business
     assert not rep["blocked"]
 

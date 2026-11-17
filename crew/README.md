@@ -190,7 +190,7 @@ Documents without `part` (two ICDs for one ECU) are simply two documents.
 |---|---|---|
 | `SYS-SRS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
 | `SW-SRS-BRK-060` | a **software** requirement | what the software itself must do |
-| `SRS-BRK-011` | a **software** requirement | the unmarked form used before the two were told apart; still read, but the example documents no longer use it |
+| `SRS-BRK-011` | a **system** requirement, first | no marker: accepted and read as a system requirement. If its wording reads as software ("the software shall"), the review says so and gives the id it should have (`SW-SRS-BRK-011`) |
 
 ```
 - **SYS-SRS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
@@ -260,6 +260,23 @@ is not held.
 **Pipeline B** (`python -m crew.main author <brief.yaml>`): the SE's brief names the document, its sources and the
 safety assessment (severity and control category per safety-significant function). ESAM computes the SwCI and never
 assesses safety itself.
+
+The draft uses the same id convention as every SRS: `SYS-SRS-<code>-0NN` for what the unit as a whole must do,
+`SW-SRS-<code>-0NN` for what the software must do, and a software requirement lists the system requirement it
+implements in its `Traces to`. The lint (`check_srs`) holds the draft to it:
+
+| Finding | Level |
+|---|---|
+| An id that is not this document's, or not in either form | error |
+| `Level:` on the attribute line disagrees with the id (or is neither `system` nor `software`) | error |
+| The wording disagrees with the id ("the software shall" under a `SYS-` id), with the id it should have | warning |
+| An id with no marker: accepted, read as a system requirement, and asked to take its marker | warning |
+| A system requirement no software requirement of the draft traces to | warning |
+| A system requirement that traces to a software requirement | error |
+
+The drafting agent is told to write a system requirement only where a source or the brief states one, and the
+verifier checks each requirement's kind. `traceability_matrix.csv` has a `level` column and the evidence index
+counts the two kinds. `tests/fixtures/SRS-ENG-001_reference.md` is a draft in this form that passes.
 
 | Step | Agent | Tools | Decides |
 |---|---|---|---|

@@ -41,7 +41,7 @@ from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
 from .ontology import Ontology, check_baseline, find_node, part_sets
 from .readers import PICTURES, convert
-from .traceability import (_ID, LEVELS, classification_rules, id_for, load_traceability, read_requirements,
+from .traceability import (_ID, LEVELS, classification_rules, id_for, id_parts, load_traceability, read_requirements,
                            read_test_cases, shall_subject)
 from .vectorstores.base import VectorStore
 
@@ -230,7 +230,7 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
                                  if r["subsystem"] == entry.get("attached_to") and r["eid"] not in covered]
     elif dtype == "srs":
         # Every requirement is a SYSTEM or a SOFTWARE requirement and its id says which (SYS-SRS-… / SW-SRS-…;
-        # plain SRS-… is software). Its `Level:` line and its wording are the cross-check (traceability.classify).
+        # plain SRS-… is taken as system). Its `Level:` line and its wording are the cross-check (traceability.classify).
         rules = classification_rules()
         markers = rules["id_marker"]
         found = read_requirements(text, aid, entry.get("attached_to", "")).vertices
@@ -250,7 +250,9 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
             if p.get("level_expected"):
                 why = ("its attribute line says 'Level: " + p["level_expected"] + "'" if p["level_expected_by"] == "stated"
                        else f"its wording reads as a {p['level_expected']} requirement (\"{shall_subject(p['text'])} shall\")")
-                out["issues"].append(f"{v.eid}: the id says {p['level']} requirement, but {why}. If it is a "
+                says = (f"the id has no SYS- or SW- marker, so it is read as a {p['level']} requirement, but"
+                        if id_parts(v.eid, rules)[0] is None else f"the id says {p['level']} requirement, but")
+                out["issues"].append(f"{v.eid}: {says} {why}. If it is a "
                                      f"{p['level_expected']} requirement, number it {id_for(v.eid, p['level_expected'], rules)}")
             if p["level_source"] != "id":
                 out["issues"].append(f"{v.eid}: the id does not say whether this is a system or a software requirement: "

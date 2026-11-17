@@ -17,6 +17,7 @@ from crewai.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
 from esamkit.ontology import part_sets
+from esamkit.traceability import level_of_id
 from esamkit.usage import UsageLedger
 
 
@@ -231,7 +232,7 @@ class CheckCoverageTool(WorkbenchTool):
 
 
 class RequirementInput(BaseModel):
-    requirement_id: str = Field(..., description="Requirement id: SYS-SRS-BRK-050 (system), SW-SRS-BRK-060 or SRS-BRK-011 (software)")
+    requirement_id: str = Field(..., description="Requirement id: SYS-SRS-BRK-040 (system), SW-SRS-BRK-011 (software); an unmarked SRS-BRK-011 is read as system")
 
 
 class VerifiedByTool(WorkbenchTool):
@@ -247,7 +248,7 @@ class VerifiedByTool(WorkbenchTool):
         if not req:
             return f"{requirement_id} is not a requirement in the graph."
         edges = [e for e in g.snapshot()["edges"] if e["type"] == "TRACES_TO"]
-        return _dump({"requirement": requirement_id, "level": req["props"].get("level") or "software",
+        return _dump({"requirement": requirement_id, "level": req["props"].get("level") or level_of_id(requirement_id) or "system",
                       "level_decided_by": req["props"].get("level_source"),
                       "text": req["props"].get("text"), "allocated_to": req["props"].get("subsystem"),
                       "document": req["props"].get("source_artifact"), "verified_by": g.verified_by(requirement_id),
