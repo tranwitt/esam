@@ -159,7 +159,11 @@ approval the markdown becomes `data/documents/<ID>.md` and the delivered file is
 `data/documents/originals/<ID>.<ext>`; `undo` removes both. A picture states nothing about itself, so it
 needs `--set id=…` (and normally `name`, `revision`, `attached_to`). `documents.diagrams` in the profile
 (`auto | local | off`) decides whether pictures may go to the vision role's model; the pilot templates say
-`local`.
+`local`. Pictures are numbered in the order they stand in the document, including floating pictures, pictures
+in table cells and diagrams drawn with Word shapes (their text is read as "text in the drawing"); pictures in
+page headers and footers are left out. Two delivered `.doc` files of this kind are part of the sample corpus
+(`data/documents/originals/SSDD-SUSP-001.doc`, `SSDD-PWR-001.doc`, both already ingested as revision A);
+`python -m esamkit.readers <file>` prints what the pipeline reads from one.
 
 What the document must state (SE manual §2.5): a title line `# <ID> — <name>` and the table
 `| Document | Type | Revision | Subsystem |`. Missing fields are ontology findings; the SE can supply them

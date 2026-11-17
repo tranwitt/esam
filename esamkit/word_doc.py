@@ -16,23 +16,33 @@ offset. This module reads all of that:
     outline levels), the Title and Caption styles, list items;
   * tables, row by row and cell by cell;
   * bold runs (so `**SW-SRS-BRK-011**` requirement ids survive);
-  * the text typed inside drawing shapes (text boxes);
-  * embedded PNG and JPEG pictures, placed where they appear when Word
-    recorded a position for them.
+  * pictures, where they appear in the text: inline pictures, pictures in
+    table cells, and FLOATING pictures (those the text wraps around),
+    which Word keeps in a separate drawing layer ("OfficeArt") and ties to
+    an anchor character. PNG, JPEG, BMP and TIFF as they are; EMF and WMF
+    drawings (and the preview of an embedded object such as a Visio
+    drawing or a chart) are taken out as metafiles, which ESAM can read
+    further only where LibreOffice is installed to render them;
+  * diagrams DRAWN in Word with shapes and text boxes: the text of the
+    shapes anchored in one paragraph, in reading order, as one drawing;
+  * a picture used several times is read each time; pictures in page
+    headers and footers (logos) are left out, and said so.
 
 What it cannot do, and LibreOffice (esamkit/readers.py) can: automatic
-numbers (numbered headings and lists show without their number), vector
-pictures (EMF/WMF), and password-protected files. Word 6/95 files give
-their text only.
+numbers (numbered headings and lists show without their number), and
+password-protected files. Word 6/95 files give their text only. Anything
+in the drawing layer this reader cannot follow is still found by scanning
+for picture data, and placed at the end with a note.
 
 References: [MS-CFB] Compound File Binary File Format and [MS-DOC] Word
 (.doc) Binary File Format, both published by Microsoft.
 """
 
 import struct
+import zlib
 from bisect import bisect_right
 
-from .docmodel import Para, Picture, Table
+from .docmodel import Para, Picture, Table, reading_order
 
 OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _END, _FREE = 0xFFFFFFFE, 0xFFFFFFFF
@@ -347,6 +357,256 @@ def carve(data: bytes, start: int = 0, end: int | None = None) -> list[tuple[int
     return out
 
 
+# ── The drawing layer (OfficeArt, [MS-ODRAW]) ────────────────────────────────
+# Records are nested: an 8-byte header (version/instance, type, length) and a
+# payload; version 0xF marks a container of more records.
+
+_DGG, _BSTORE, _DG, _SPGR, _SP, _BSE, _FSP, _FOPT = 0xF000, 0xF001, 0xF002, 0xF003, 0xF004, 0xF007, 0xF00A, 0xF00B
+_CHILD_ANCHOR, _TERTIARY = 0xF00F, 0xF122
+_BLIP_FIRST, _BLIP_LAST = 0xF018, 0xF117
+# blip record type -> (mime, the record instances that carry a second 16-byte id)
+_BLIPS = {0xF01A: ("image/x-emf", {0x3D5}), 0xF01B: ("image/x-wmf", {0x217}), 0xF01C: ("image/x-pict", {0x543}),
+          0xF01D: ("image/jpeg", {0x46B, 0x6E3}), 0xF02A: ("image/jpeg", {0x46B, 0x6E3}),
+          0xF01E: ("image/png", {0x6E1}), 0xF01F: ("image/bmp", {0x7A9}), 0xF029: ("image/tiff", {0x6E5})}
+EXTENSIONS = {"image/png": "png", "image/jpeg": "jpg", "image/bmp": "bmp", "image/tiff": "tif",
+              "image/x-emf": "emf", "image/x-wmf": "wmf", "image/x-pict": "pict"}
+MAX_PICTURE = 64 * 1024 * 1024          # a decompressed metafile larger than this is not taken
+
+
+def _records(buf: bytes, pos: int, end: int):
+    """(version, instance, type, payload start, payload length) for each record in buf[pos:end]."""
+    end = min(end, len(buf))
+    while pos + 8 <= end:
+        vi, kind, length = struct.unpack_from("<HHI", buf, pos)
+        if pos + 8 + length > end:
+            length = end - pos - 8          # a record cut short: take what is there, then stop
+        yield vi & 0xF, vi >> 4, kind, pos + 8, length
+        pos += 8 + length
+
+
+def _dib_to_bmp(dib: bytes) -> bytes:
+    """A device-independent bitmap as Word stores it (no file header) -> a .bmp file."""
+    if len(dib) < 40:
+        return dib
+    header, bpp = struct.unpack_from("<I", dib, 0)[0], struct.unpack_from("<H", dib, 14)[0]
+    colours = struct.unpack_from("<I", dib, 32)[0] or (1 << bpp if bpp <= 8 else 0)
+    bits = 14 + header + 4 * colours
+    return b"BM" + struct.pack("<IHHI", 14 + len(dib), 0, 0, bits) + dib
+
+
+def _blip(buf: bytes, instance: int, kind: int, start: int, length: int) -> tuple[str, bytes] | None:
+    """The picture inside one blip record: (mime, bytes), or None."""
+    if kind not in _BLIPS:
+        return None
+    mime, two_ids = _BLIPS[kind]
+    body = start + 16 + (16 if instance in two_ids else 0)
+    end = start + length
+    if mime in ("image/x-emf", "image/x-wmf", "image/x-pict"):
+        if body + 34 > end:
+            return None
+        saved, compression = struct.unpack_from("<I", buf, body + 28)[0], buf[body + 32]
+        raw = buf[body + 34: min(end, body + 34 + saved)]
+        if compression == 0:
+            try:
+                raw = zlib.decompressobj().decompress(raw, MAX_PICTURE)
+            except zlib.error:
+                return None
+        return (mime, raw) if raw else None
+    data = buf[body + 1: end]                 # one tag byte, then the file itself
+    if mime == "image/bmp":
+        return mime, _dib_to_bmp(data)
+    found = carve(data) if mime in ("image/png", "image/jpeg") else []
+    return (found[0][1], found[0][2]) if found else ((mime, data) if data else None)
+
+
+def _blips_in(buf: bytes, pos: int, end: int, depth: int = 0) -> list[tuple[str, bytes]]:
+    """Every picture in the records of buf[pos:end], nested containers included."""
+    out = []
+    if depth > 12:
+        return out
+    for ver, inst, kind, start, length in _records(buf, pos, end):
+        if _BLIP_FIRST <= kind <= _BLIP_LAST:
+            got = _blip(buf, inst, kind, start, length)
+            if got:
+                out.append(got)
+        elif kind == _BSE and length > 36:        # a store entry with the picture inside it
+            out += _blips_in(buf, start + 36 + buf[start + 33], start + length, depth + 1)
+        elif ver == 0xF:
+            out += _blips_in(buf, start, start + length, depth + 1)
+    return out
+
+
+class _Shape:
+    __slots__ = ("spid", "top", "pib", "txbx", "box", "order")
+
+    def __init__(self, spid, top, order):
+        self.spid, self.top, self.pib, self.txbx, self.box, self.order = spid, top, 0, 0, None, order
+
+
+class _DrawingLayer:
+    """What the document's drawing layer says: the stored pictures and, for
+    every shape, the top-level shape it belongs to, its picture and its text box."""
+
+    def __init__(self, table: bytes, fc: int, lcb: int, doc: bytes):
+        self.blips: list[tuple[str, bytes] | None] = []      # the store, index 0 = picture number 1
+        self.shapes: dict[int, _Shape] = {}
+        self.header_shapes: set[int] = set()
+        pos, end = fc, min(fc + lcb, len(table))
+        first = True
+        while pos + 8 <= end:
+            if not first:                                    # each drawing is preceded by one byte: 0 main text, 1 headers
+                where = table[pos]
+                pos += 1
+                if pos + 8 > end:
+                    break
+            ver, inst, kind, start, length = next(_records(table, pos, end))
+            if kind == _DGG:
+                self._store(table, start, start + length, doc)
+            elif kind == _DG:
+                before = set(self.shapes)
+                self._drawing(table, start, start + length)
+                if not first and where == 1:
+                    self.header_shapes |= set(self.shapes) - before
+            first = False
+            pos = start + length
+
+    def _store(self, table: bytes, pos: int, end: int, doc: bytes) -> None:
+        for ver, inst, kind, start, length in _records(table, pos, end):
+            if kind != _BSTORE:
+                continue
+            for _, _, k, s, n in _records(table, start, start + length):
+                if k != _BSE or n < 36:
+                    self.blips.append(None)
+                    continue
+                size, _refs, delay = struct.unpack_from("<III", table, s + 20)
+                got = None
+                if n > 36 + table[s + 33]:                    # the picture sits in the entry
+                    inside = _blips_in(table, s + 36 + table[s + 33], s + n)
+                    got = inside[0] if inside else None
+                elif delay != 0xFFFFFFFF and delay + 8 <= len(doc):   # the usual place: the WordDocument stream
+                    inside = _blips_in(doc, delay, min(len(doc), delay + size + 8))
+                    got = inside[0] if inside else None
+                self.blips.append(got)
+
+    def _drawing(self, buf: bytes, pos: int, end: int) -> None:
+        for ver, inst, kind, start, length in _records(buf, pos, end):
+            if kind == _SPGR:                                 # the drawing's own group: its children are the top-level shapes
+                for v2, _, k2, s2, n2 in _records(buf, start, start + length):
+                    if k2 == _SP:
+                        self._shape(buf, s2, s2 + n2, None)
+                    elif k2 == _SPGR:
+                        self._group(buf, s2, s2 + n2, None, 0)
+
+    def _group(self, buf: bytes, pos: int, end: int, top: int | None, depth: int) -> None:
+        if depth > 12:
+            return
+        for _, _, kind, start, length in _records(buf, pos, end):
+            if kind == _SP:
+                spid = self._shape(buf, start, start + length, top)
+                if top is None and spid:
+                    top = spid                                # the first shape of a group is the group itself
+            elif kind == _SPGR:
+                self._group(buf, start, start + length, top, depth + 1)
+
+    def _shape(self, buf: bytes, pos: int, end: int, top: int | None) -> int | None:
+        spid, pib, txbx, box = None, 0, 0, None
+        for _, inst, kind, start, length in _records(buf, pos, end):
+            if kind == _FSP and length >= 8:
+                spid = struct.unpack_from("<I", buf, start)[0]
+            elif kind in (_FOPT, _TERTIARY):
+                for k in range(min(inst, length // 6)):
+                    opid, value = struct.unpack_from("<HI", buf, start + 6 * k)
+                    if opid & 0x3FFF == 0x0104 and opid & 0x4000:      # pib: which stored picture the shape shows
+                        pib = value
+                    elif opid & 0x3FFF == 0x0080:                      # lTxid: which text box holds its text
+                        txbx = value >> 16
+            elif kind == _CHILD_ANCHOR and length >= 16:
+                box = struct.unpack_from("<4i", buf, start)
+        if spid is None:
+            return None
+        shape = _Shape(spid, top if top is not None else spid, len(self.shapes))
+        shape.pib, shape.txbx, shape.box = pib, txbx, box
+        self.shapes[spid] = shape
+        return spid
+
+    def members(self, top: int) -> list[_Shape]:
+        return sorted((s for s in self.shapes.values() if s.top == top), key=lambda s: s.order)
+
+    def picture(self, shape: _Shape) -> tuple[str, bytes] | None:
+        return self.blips[shape.pib - 1] if 0 < shape.pib <= len(self.blips) else None
+
+
+def _anchors(table: bytes, fc: int, lcb: int) -> dict[int, tuple[int, int, int, int, int]]:
+    """Floating shapes: {character position of the anchor: (shape id, left, top, right, bottom)}."""
+    n = (lcb - 4) // 30
+    if n <= 0 or fc + lcb > len(table):
+        return {}
+    cps = struct.unpack_from(f"<{n + 1}i", table, fc)
+    out = {}
+    for k in range(n):
+        spid, left, top, right, bottom = struct.unpack_from("<I4i", table, fc + 4 * (n + 1) + 26 * k)
+        out[cps[k]] = (spid, left, top, right, bottom)
+    return out
+
+
+def _textboxes(table: bytes, fc: int, lcb: int) -> list[tuple[int, int, int]]:
+    """Text boxes in story order: [(first character, end character, shape id)], positions within the text-box text."""
+    n = (lcb - 4) // 26
+    if n <= 0 or fc + lcb > len(table):
+        return []
+    cps = struct.unpack_from(f"<{n + 1}i", table, fc)
+    return [(cps[k], cps[k + 1], struct.unpack_from("<I", table, fc + 4 * (n + 1) + 22 * k + 14)[0]) for k in range(n)]
+
+
+def _inline_picture(datastream: bytes, loc: int) -> tuple[list[tuple[str, bytes]], bool]:
+    """The picture an inline picture character points at in the Data stream:
+    ([(mime, bytes)], True when something is there that this reader cannot take out)."""
+    if loc < 0 or loc + 8 > len(datastream):
+        return [], False
+    size, header, mm = struct.unpack_from("<iHh", datastream, loc)
+    end = min(len(datastream), loc + max(size, 0))
+    start = loc + header
+    if mm == 0x66 and start < end:                    # a linked picture: its file name comes first
+        start += 1 + datastream[start]
+    found: list[tuple[str, bytes]] = []
+    if mm in (0x64, 0x66):
+        try:
+            found = _blips_in(datastream, start, end)
+        except (struct.error, IndexError):
+            found = []
+    if not found:
+        found = [(mime, blob) for _, mime, blob in carve(datastream, loc, end)][:1]
+    # mm 0x64 with nothing in it is a drawn shape, whose text is read from its text box
+    return found[:1], not found and mm != 0x64 and size > 0x44
+
+
+class _Floating:
+    """The floating things of one text: which pictures and which shape text
+    sit at each anchor character."""
+
+    def __init__(self, layer: _DrawingLayer | None, anchors: dict, box_text: dict[int, list[str]]):
+        self.layer, self.anchors, self.box_text = layer, anchors, box_text
+        self.used: set[int] = set()
+
+    def at(self, cp: int) -> tuple[list[tuple[str, bytes]], list[tuple[tuple | None, list[str]]]]:
+        """(pictures, [(box, the text lines of one shape)]) anchored at character cp."""
+        if cp not in self.anchors:
+            return [], []
+        spid, *rect = self.anchors[cp]
+        members = self.layer.members(spid) if self.layer else []
+        pictures, texts = [], []
+        for m in members:
+            pic = self.layer.picture(m)
+            if pic:
+                pictures.append(pic)
+        for sid, box in [(m.spid, m.box if m.spid != spid and m.box else tuple(rect)) for m in members] or [(spid, tuple(rect))]:
+            if sid in self.box_text and sid not in self.used:
+                self.used.add(sid)
+                if self.box_text[sid]:
+                    texts.append((box, self.box_text[sid]))
+        return pictures, texts
+
+
 # ── The Word document ────────────────────────────────────────────────────────
 
 _FIELD_BEGIN, _FIELD_SEP, _FIELD_END = "\x13", "\x14", "\x15"
@@ -355,6 +615,8 @@ _REPLACE = {"\x0b": "\n", "\x1e": "-", "\x1f": "", "\xa0": " ", "\x0e": " ", "\t
             "\x02": "", "\x03": "", "\x04": "", "\x05": "", "\x08": "", "\x01": ""}
 
 
+_UNREAD = ("a picture or embedded object in a format this reader does not take out was skipped: "
+           "install LibreOffice to read it")
 _NUMBERS = ("automatic numbers (numbered headings and lists) are not shown by the built-in .doc reader: "
             "install LibreOffice for a full conversion")
 
@@ -408,26 +670,71 @@ def parse_doc(data: bytes) -> tuple[list, list[str]]:
 
     main, fcs = text_of(0, max(0, ccp[0]))
     datastream = cf.stream("Data") or b""
-    blocks = _blocks(main, fcs, papx, chpx, styles, datastream, notes)
 
+    # The drawing layer: floating pictures and drawn shapes, each tied to an anchor character in the text.
+    layer, anchors, box_text = None, {}, {}
+    try:
+        if pair(50)[1]:
+            layer = _DrawingLayer(table, *pair(50), doc)
+        anchors = _anchors(table, *pair(40))
+    except (struct.error, IndexError, StopIteration, zlib.error):
+        layer, anchors = None, {}
+        notes.append("the drawing layer of this document could not be followed: floating pictures are placed "
+                     "at the end")
     # Text typed inside drawing shapes lives after the main text, footnotes, headers, macros, comments and endnotes.
     box_start = sum(ccp[:6])
+    stray: list[str] = []
     if ccp[6] > 0:
-        boxes, _ = text_of(box_start, box_start + ccp[6])
-        labels = [" ".join(_clean(x).split()) for x in boxes.replace(_CELL, _PARA).split(_PARA)]
-        labels = [x for x in dict.fromkeys(labels) if x]
-        if labels:
-            blocks.append(Para(pictures=[Picture("drawing1", labels=labels)]))
+        try:
+            boxes = _textboxes(table, *pair(56))
+        except struct.error:
+            boxes = []
+        lines = lambda a, b: [x for x in (" ".join(_clean(_pair(y)).split()) for y in    # noqa: E731
+                                          text_of(box_start + a, box_start + b)[0].replace(_CELL, _PARA).split(_PARA)) if x]
+        for a, b, lid in boxes:
+            if 0 <= a <= b <= ccp[6]:
+                box_text.setdefault(lid, [])
+                box_text[lid] += lines(a, b)
+        if not boxes:
+            stray = lines(0, ccp[6])
+    floating = _Floating(layer, anchors, box_text)
+    blocks = _blocks(main, fcs, papx, chpx, styles, datastream, notes, floating)
 
-    # Pictures Word stored without a position we could follow (floating pictures).
-    placed = {p.data for b in blocks for p in getattr(b, "pictures", [])}
-    loose = [(mime, blob) for _, mime, blob in carve(datastream) + carve(doc) if blob not in placed]
-    for i, (mime, blob) in enumerate(dict.fromkeys(loose), 1):
-        ext = "png" if mime == "image/png" else "jpg"
-        blocks.append(Para(pictures=[Picture(f"picture{len(placed) + i}.{ext}", blob, mime)]))
+    # Shape text that no anchor led to: kept, at the end.
+    stray += [x for lid, found in box_text.items() if lid not in floating.used for x in found]
+    stray = list(dict.fromkeys(stray))
+    if stray:
+        n = sum(1 for b in blocks for q in getattr(b, "pictures", []) if not q.data)
+        blocks.append(Para(pictures=[Picture(f"drawing{n + 1}", labels=stray)]))
+
+    # Pictures in page headers and footers (a logo, a classification banner) are not content.
+    skip: set[bytes] = set()
+    head0 = ccp[0] + ccp[1]
+    if ccp[2] > 0:
+        head, head_fcs = text_of(head0, head0 + ccp[2])
+        for i, ch in enumerate(head):
+            if ch == "\x01":
+                props = chpx.at(head_fcs[i]) or {}
+                if SPRM_C_PIC in props and not _u(props.get(SPRM_C_DATA)) and not _u(props.get(SPRM_C_OLE2)):
+                    skip |= {blob for _, blob in _inline_picture(datastream, _u(props[SPRM_C_PIC]))[0]}
+    if layer:
+        skip |= {pic[1] for sid in layer.header_shapes for pic in [layer.picture(layer.shapes[sid])] if pic}
+
+    # Pictures Word stored without a position we could follow.
+    placed = {q.data for b in blocks for q in getattr(b, "pictures", []) if q.data}
+    skip -= placed
+    stored = [x for x in (layer.blips if layer else []) if x]
+    loose = [x for x in stored + [(mime, blob) for _, mime, blob in carve(datastream) + carve(doc)]
+             if x[1] not in placed and x[1] not in skip]
+    # a picture found by scanning that lies inside a stored one (a preview inside a metafile) is not a second picture
+    loose = [x for x in dict.fromkeys(loose) if not any(x[1] != big and x[1] in big for big in placed | skip)]
+    for i, (mime, blob) in enumerate(loose, 1):
+        blocks.append(Para(pictures=[Picture(f"picture{len(placed) + i}.{EXTENSIONS.get(mime, 'bin')}", blob, mime)]))
     if loose:
-        notes.append(f"{len(dict.fromkeys(loose))} picture(s) are placed at the end: their position in the text "
+        notes.append(f"{len(loose)} picture(s) are placed at the end: their position in the text "
                      "is not recorded in a way this reader follows")
+    if skip:
+        notes.append(f"{len(skip)} picture(s) in the page headers or footers (such as a logo) were left out")
     return blocks, notes
 
 
@@ -472,7 +779,7 @@ def _clean(text: str) -> str:
 
 
 def _blocks(main: str, fcs: list[int], papx: _Ranges, chpx: _Ranges, styles: dict, datastream: bytes,
-            notes: list[str]) -> list:
+            notes: list[str], floating: "_Floating | None" = None) -> list:
     blocks: list = []
     table: Table | None = None
     row: list[str] = []
@@ -480,8 +787,14 @@ def _blocks(main: str, fcs: list[int], papx: _Ranges, chpx: _Ranges, styles: dic
     runs: list[tuple[str, bool]] = []
     pics: list[Picture] = []
     field: list[bool] = []             # one entry per open field: True while in its instruction part
-    n_pics = 0
+    shape_text: list[tuple[tuple | None, list[str]]] = []   # the text of the shapes anchored in this paragraph
+    n_pics = n_drawings = 0
     have_props = bool(papx.items)
+
+    def picture(mime: str, blob: bytes) -> Picture:
+        nonlocal n_pics
+        n_pics += 1
+        return Picture(f"picture{n_pics}.{EXTENSIONS.get(mime, 'bin')}", blob, mime)
 
     def flush_table():
         nonlocal table, row, cell
@@ -511,17 +824,15 @@ def _blocks(main: str, fcs: list[int], papx: _Ranges, chpx: _Ranges, styles: dic
             props = chpx.at(fcs[i]) or {}
             if ch == "\x01" and _u(props.get(SPRM_C_SPEC)) and SPRM_C_PIC in props \
                     and not _u(props.get(SPRM_C_DATA)) and not _u(props.get(SPRM_C_OLE2)):
-                loc = _u(props[SPRM_C_PIC])
-                if 0 <= loc and loc + 4 <= len(datastream):
-                    (size,) = struct.unpack_from("<i", datastream, loc)
-                    found = carve(datastream, loc, loc + max(size, 0))
-                    if found:
-                        n_pics += 1
-                        mime, blob = found[0][1], found[0][2]
-                        pics.append(Picture(f"picture{n_pics}.{'png' if mime == 'image/png' else 'jpg'}", blob, mime))
-                    elif size > 0x44:
-                        notes.append("a picture in a vector format (EMF/WMF) or an embedded object was skipped: "
-                                     "install LibreOffice to read it")
+                found, unread = _inline_picture(datastream, _u(props[SPRM_C_PIC]))
+                pics += [picture(*x) for x in found]
+                if unread and _UNREAD not in notes:
+                    notes.append(_UNREAD)
+                continue
+            if ch == "\x08" and floating is not None and _u(props.get(SPRM_C_SPEC)):
+                found, texts = floating.at(i)                 # the anchor of a floating picture or a drawn shape
+                pics += [picture(*x) for x in found]
+                shape_text += texts
                 continue
             bold = _u(props.get(SPRM_C_BOLD)) in (1, 0x81)
             text = _clean(ch)
@@ -535,11 +846,18 @@ def _blocks(main: str, fcs: list[int], papx: _Ranges, chpx: _Ranges, styles: dic
         # A paragraph mark, a cell mark or a page / section break ends the paragraph.
         istd, pp = papx.at(fcs[i]) or (0, {})
         in_table = bool(_u(pp.get(SPRM_P_IN_TABLE)) or _u(pp.get(SPRM_P_ITAP))) or ch == _CELL
+        if shape_text:                     # the shapes drawn in this paragraph are one drawing, read row by row
+            n_drawings += 1
+            labels = list(dict.fromkeys(x for found in reading_order(shape_text) for x in found))
+            pics.append(Picture(f"drawing{n_drawings}", labels=labels))
+            shape_text = []
         runs = [(_pair(t), b) for t, b in runs]
         text = "".join(t for t, _ in runs).strip()
         if in_table:
             if table is None:
                 table = Table()
+            for q in pics:
+                q.cell = (len(table.rows), len(row))
             table.pictures += pics
             row_end = bool(_u(pp.get(SPRM_P_TTP))) if have_props else (ch == _CELL and not text and not cell and bool(row))
             if row_end:

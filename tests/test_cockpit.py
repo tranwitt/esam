@@ -24,12 +24,12 @@ def client(pg_dsn, baseline):
 
 
 def test_health(client):
-    assert client.get("/api/health").json() == {"status": "ok", "vertices": 20, "edges": 22}
+    assert client.get("/api/health").json() == {"status": "ok", "vertices": 22, "edges": 24}
 
 
 def test_cockpit_payload(client):
     data = client.get("/api/cockpit").json()
-    assert len(data["graph"]["vertices"]) == 20 and len(data["graph"]["edges"]) == 22
+    assert len(data["graph"]["vertices"]) == 22 and len(data["graph"]["edges"]) == 24
     assert data["doc_types"] == ["srs", "sdd", "icd", "std"]          # every type a rule can require
     # what each subsystem must have comes from the ontology's rules
     assert {k: sorted(v) for k, v in data["required"].items()} == {

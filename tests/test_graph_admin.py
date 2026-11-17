@@ -61,9 +61,9 @@ def test_reload_builds_the_graph_from_the_baseline_and_its_documents(s):
     assert ga.status(g, s)["in_step"] is False and len(ga.status(g, s)["missing"]) > 20
     res = ga.reload(g, s)
     assert res["before"]["vertices"] == 0 and res["in_step"] and res["ontology_errors"] == []
-    assert res["graph"]["by_label"]["Subsystem"] == 4 and res["graph"]["by_label"]["DesignArtifact"] == 5
+    assert res["graph"]["by_label"]["Subsystem"] == 4 and res["graph"]["by_label"]["DesignArtifact"] == 7
     assert res["graph"]["by_label"]["Requirement"] == res["traceability"]["requirements"] > 0
-    assert res["graph"]["by_type"]["HAS_ARTIFACT"] == 5 and ga.status(g, s)["in_step"]
+    assert res["graph"]["by_type"]["HAS_ARTIFACT"] == 7 and ga.status(g, s)["in_step"]
     again = ga.reload(g, s)                                         # repeatable: same graph, nothing doubled
     assert again["graph"] == res["graph"] and again["before"] == res["graph"]
 

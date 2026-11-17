@@ -150,7 +150,7 @@ def test_parts_are_ingested_one_by_one_and_none_replaces_another(tmp_path, monke
     oc = ontology_check(onto, s.baseline_yaml, got["entry"])
     assert oc["ok"] and oc["replaces_revision"] == "A" and oc["part"]["still_missing"] == []
     m = ingest(tmp_path / got["document"], got["entry"], Emb(), store, None, tmp_path / "replaced2b", s)
-    assert m["previous_line"] and len(yaml.safe_load(s.baseline_yaml.read_text())["artifacts"]) == 5 + 3
+    assert m["previous_line"] and len(yaml.safe_load(s.baseline_yaml.read_text())["artifacts"]) == 7 + 3
 
     # undoing one part leaves the others, and the set is reported incomplete again
     undo(manifests[1], store, None, None, s)                     # part 3

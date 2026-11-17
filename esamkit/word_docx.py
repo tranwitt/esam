@@ -21,7 +21,7 @@ import re
 import zipfile
 from xml.etree import ElementTree as ET
 
-from .docmodel import Para, Picture, Table
+from .docmodel import Para, Picture, Table, merge_drawings, reading_order
 
 MAX_PART = 200 * 1024 * 1024         # refuse absurd (zip-bomb) parts
 MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
@@ -239,6 +239,14 @@ class _Reader:
                 break
         out: list[Picture] = []
         labels: list[str] = []
+        shapes: list[tuple[tuple | None, str]] = []    # (where the shape sits, its text)
+        where: dict[int, tuple] = {}                   # text box element -> the box of the shape that holds it
+        for d in el.iter():
+            if _ln(d.tag) == "wsp":
+                box = self._box(d)
+                for x in d.iter():
+                    if _ln(x.tag) == "txbxContent":
+                        where[id(x)] = box
         for d in el.iter():
             name = _ln(d.tag)
             rid = _attr(d, "embed") if name == "blip" else _attr(d, "id") if name == "imagedata" else ""
@@ -260,14 +268,54 @@ class _Reader:
             elif name == "txbxContent":                        # text typed inside a shape
                 text = " ".join("".join(t.text or "" for t in p.iter() if _ln(t.tag) == "t").strip()
                                 for p in d.iter() if _ln(p.tag) == "p").strip()
-                if text and text not in labels:
-                    labels.append(text)
+                if text:
+                    shapes.append((where.get(id(d)), text))
+        # the shapes of one drawing, top row first and left to right
+        labels += [x for x in dict.fromkeys(reading_order(shapes)) if x not in labels]
         if out:
             out[-1].labels = labels
         elif labels:
             self._seen["drawing"] = self._seen.get("drawing", 0) + 1
-            out.append(Picture(f"drawing{self._seen['drawing']}", alt=alt, labels=labels))
+            out.append(Picture(f"drawing{self._seen['drawing']}", alt=alt, labels=labels, box=self._anchor_box(el)))
         return out
+
+    @staticmethod
+    def _int(text) -> int | None:
+        try:
+            return int((text or "").strip())
+        except ValueError:
+            return None
+
+    def _box(self, shape) -> tuple | None:
+        """Where a shape sits inside its drawing: (left, top, right, bottom) from its a:xfrm."""
+        for x in shape.iter():
+            if _ln(x.tag) == "xfrm":
+                off, ext = _child(x, "off"), _child(x, "ext")
+                if off is not None:
+                    left, top = self._int(off.get("x")), self._int(off.get("y"))
+                    w = self._int(ext.get("cx")) if ext is not None else 0
+                    h = self._int(ext.get("cy")) if ext is not None else 0
+                    if left is not None and top is not None:
+                        return left, top, left + (w or 0), top + (h or 0)
+                return None
+        return None
+
+    def _anchor_box(self, el) -> tuple | None:
+        """Where a floating drawing sits relative to its paragraph, from wp:anchor."""
+        pos: dict[str, int] = {}
+        for x in el.iter():
+            name = _ln(x.tag)
+            if name in ("positionH", "positionV"):
+                off = _child(x, "posOffset")
+                value = self._int(off.text) if off is not None else None
+                if value is not None:
+                    pos[name] = value
+            elif name == "extent" and "cx" not in pos:
+                pos["cx"], pos["cy"] = self._int(x.get("cx")) or 0, self._int(x.get("cy")) or 0
+        if "positionH" not in pos or "positionV" not in pos:
+            return None
+        return (pos["positionH"], pos["positionV"], pos["positionH"] + pos.get("cx", 0),
+                pos["positionV"] + pos.get("cy", 0))
 
     @staticmethod
     def _alternate(el):
@@ -318,8 +366,15 @@ class _Reader:
             return None
         runs: list = []
         pics: list = []
+        drawn = self._seen.get("drawing", 0)
         self._walk(p, False, runs, pics)
-        para = Para(runs=runs, pictures=pics)
+        para = Para(runs=runs, pictures=merge_drawings(pics))
+        if len(para.pictures) != len(pics):                # shapes were joined: number the drawings without gaps
+            for pic in para.pictures:
+                if not pic.data and pic.name.startswith("drawing"):
+                    drawn += 1
+                    pic.name = f"drawing{drawn}"
+            self._seen["drawing"] = drawn
 
         numpr = _child(ppr, "numPr")
         num_id, ilvl = "", None
@@ -376,7 +431,13 @@ class _Reader:
     def table(self, tbl) -> Table:
         t = Table()
         for tr in self._direct(tbl, "tr"):
-            t.rows.append([self._cell_text(tc, t.pictures) for tc in self._direct(tr, "tc")])
+            row = []
+            for tc in self._direct(tr, "tc"):
+                before = len(t.pictures)
+                row.append(self._cell_text(tc, t.pictures))
+                for pic in t.pictures[before:]:
+                    pic.cell = (len(t.rows), len(row) - 1)
+            t.rows.append(row)
         return t
 
     def _direct(self, el, want: str, stop: str = "tbl") -> list:

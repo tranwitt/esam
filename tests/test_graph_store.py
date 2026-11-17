@@ -17,13 +17,13 @@ def graph(pg_dsn, baseline):
 
 def test_load_is_idempotent(graph, baseline):
     # the earlier script duplicated every edge on each re-run
-    assert graph.load(baseline) == {"vertices": 20, "edges": 22}
-    assert graph.load(baseline) == {"vertices": 20, "edges": 22}
+    assert graph.load(baseline) == {"vertices": 22, "edges": 24}
+    assert graph.load(baseline) == {"vertices": 22, "edges": 24}
 
 
 def test_descendants_cover_whole_tree(graph):
     rows = graph.descendants("V-001")
-    assert len(rows) == 15                                  # everything except the 5 artifacts
+    assert len(rows) == 15                                  # everything except the 7 artifacts
     assert rows[0]["eid"] == "V-001" and rows[0]["depth"] == 0
     assert max(r["depth"] for r in rows) == 5               # vehicle .. function
 
@@ -61,7 +61,7 @@ def test_artifact_gaps(graph):
 def test_snapshot_uses_entity_ids(graph):
     snap = graph.snapshot()
     eids = {v["eid"] for v in snap["vertices"]}
-    assert len(eids) == 20 and len(snap["edges"]) == 22
+    assert len(eids) == 22 and len(snap["edges"]) == 24
     # every edge endpoint is an entity id the vertex list contains (no UUIDs leak)
     assert all(e["from_eid"] in eids and e["to_eid"] in eids for e in snap["edges"])
     candidate = [e for e in snap["edges"] if e["props"].get("status") == "candidate"]

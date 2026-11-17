@@ -36,6 +36,47 @@ class Picture:
     alt: str = ""                   # the author's alt text
     caption: str = ""               # the caption paragraph next to it
     labels: list[str] = field(default_factory=list)   # text inside Word shapes / SmartArt / charts
+    cell: tuple[int, int] | None = None               # (row, column) when the picture sits in a table cell
+    box: tuple[int, int, int, int] | None = None      # where a drawn shape sits: left, top, right, bottom
+
+
+def reading_order(items: list) -> list:
+    """The values of [(box, value)] top row first and left to right within a
+    row, a box being (left, top, right, bottom); values without a box keep
+    their order, after the rest."""
+    boxed = sorted((x for x in items if x[0]), key=lambda x: (x[0][1], x[0][0]))
+    rows: list[list] = []
+    for box, value in boxed:
+        first = rows[-1][0][0] if rows else None
+        if first and box[1] < first[1] + max(1, (first[3] - first[1]) // 2):
+            rows[-1].append((box, value))
+        else:
+            rows.append([(box, value)])
+    return [v for row in rows for _, v in sorted(row, key=lambda x: x[0][0])] + [v for b, v in items if not b]
+
+
+def merge_drawings(pictures: list[Picture]) -> list[Picture]:
+    """Shapes drawn next to each other in one paragraph are one diagram:
+    neighbouring drawings that are only text become one, read in reading order."""
+    out: list[Picture] = []
+    run: list[Picture] = []
+
+    def close():
+        if len(run) > 1:
+            labels = [x for p in reading_order([(p.box, p) for p in run]) for x in p.labels]
+            run[0].labels, run[0].box = list(dict.fromkeys(labels)), None
+            run[0].alt = run[0].alt or next((p.alt for p in run if p.alt), "")
+        out.extend(run[:1])
+        run.clear()
+
+    for pic in pictures:
+        if pic.data or not pic.labels:
+            close()
+            out.append(pic)
+        else:
+            run.append(pic)
+    close()
+    return out
 
 
 @dataclass
@@ -142,7 +183,13 @@ def to_markdown(blocks: list, figure=None) -> str:
 
     for b in settle(blocks):
         if isinstance(b, Table):
-            rows = [[_cell(c) for c in row] for row in b.rows if any(c.strip() for c in row)]
+            cells = [list(row) for row in b.rows]
+            if figure is not None:                      # say in the cell which picture stood there
+                for k, pic in enumerate(b.pictures, 1):
+                    if pic.cell and pic.cell[0] < len(cells) and pic.cell[1] < len(cells[pic.cell[0]]):
+                        r, c = pic.cell
+                        cells[r][c] = f"{cells[r][c]} (Picture {n + k}, below)".strip()
+            rows = [[_cell(c) for c in row] for row in cells if any(c.strip() for c in row)]
             if rows:
                 width = max(len(r) for r in rows)
                 rows = [r + [""] * (width - len(r)) for r in rows]

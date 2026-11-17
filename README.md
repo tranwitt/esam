@@ -78,8 +78,9 @@ esam/
 ├── config/environments/      environment profiles (local, pilot-il5, full-janusgraph); secrets by name only
 ├── data/
 │   ├── baseline/vehicle_decomposition.yaml   SE-owned structure (ESAM YAML format)
-│   ├── documents/*.md                        synthetic ICD / SDD / SRS documents (MIL-STD-498 names)
-│   ├── documents/originals/                  Word / picture files as delivered (kept by the intake pipeline)
+│   ├── documents/*.md                        synthetic ICD / SDD / SRS / SSDD documents (MIL-STD-498 names)
+│   ├── documents/originals/                  Word / picture files as delivered (kept by the intake pipeline);
+│   │                                         two sample .doc files with pictures and drawn diagrams
 │   ├── ontology/esam_ontology.yaml           the SE vocabulary and rules
 │   ├── standards/                            standards library (clause text + catalogue with source hashes)
 │   └── briefs/                               SE authoring briefs for SRS drafting
@@ -172,8 +173,8 @@ markdown the rest of ESAM already understands:
 | File | Read by |
 |---|---|
 | `.md`, `.txt` | as is |
-| `.docx` | built-in reader (headings, lists, tables, bold requirement ids, captions, text boxes, embedded pictures) |
-| `.doc` (Word 97-2003) | LibreOffice when installed (`ESAM_DOC_CONVERTER=auto`), otherwise the built-in binary reader; both give the same requirements and test cases on the test corpus |
+| `.docx` | built-in reader (headings, lists, tables, bold requirement ids, captions, pictures, diagrams drawn with Word shapes) |
+| `.doc` (Word 97-2003) | LibreOffice when installed (`ESAM_DOC_CONVERTER=auto`), otherwise the built-in binary reader; both give the same requirements, test cases, pictures and drawings on the test corpus |
 | `.rtf` | LibreOffice, otherwise text only |
 | `.png .jpg .gif .webp .bmp .tif .svg` | a picture diagram, see below |
 
@@ -186,6 +187,20 @@ markdown, so it is chunked, embedded and searchable with its section. `ESAM_DIAG
 `auto` (a vision model describes it **if** `ESAM_VISION_MODEL` is set; results are cached by picture
 content), `local` (never sent to a model: SVG labels, text typed in Word shapes, OCR if `tesseract` is
 installed), `off` (name and caption only). With no vision model configured, no picture leaves the machine.
+
+**Complex Word files.** Both Word readers keep a picture where it stands in the text, whatever way Word holds
+it: inline, floating (the text wraps around it), inside a table cell (the cell then says `(Picture 3, below)`
+and the picture follows the table), or used several times. A diagram **drawn in Word** with shapes and text
+boxes becomes one drawing whose text is read row by row, left to right, not in the order the file happens to
+store the shapes. Logos in page headers and footers are left out, and the built-in `.doc` reader says so. From a
+`.doc` it also takes out EMF/WMF drawings and bitmaps (a vision model or OCR needs LibreOffice to render EMF/WMF).
+If the drawing layer of a `.doc` cannot be followed, its pictures are still found by scanning and placed at the
+end, with a note in the conversion report. Not tried: a `.doc` written by Microsoft Word itself (the fixtures
+are written by LibreOffice) and embedded OLE objects such as Visio drawings.
+
+The sample corpus has two such documents: `data/documents/originals/SSDD-SUSP-001.doc` and `SSDD-PWR-001.doc`,
+system-level design descriptions attached to `SYS-SUSP` and `SYS-PWR`, with the markdown Pipeline A read from
+them beside the other documents. Try `python -m esamkit.readers data/documents/originals/SSDD-SUSP-001.doc`.
 
 A diagram can also **populate the vehicle baseline**: with `ESAM_DIAGRAM_BASELINE=propose` (or `--diagram-baseline
 propose` on a review) the systems and subsystems a picture shows that the baseline lacks are listed for the SE;

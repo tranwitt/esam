@@ -11,11 +11,11 @@ from esamkit.config import settings
 
 def test_baseline_counts(baseline):
     labels = [v.label for v in baseline.vertices]
-    assert len(baseline.vertices) == 20
+    assert len(baseline.vertices) == 22
     assert labels.count("Subsystem") == 4
-    assert labels.count("DesignArtifact") == 5
+    assert labels.count("DesignArtifact") == 7      # 5 on subsystems, 2 system-level Word documents
     types = [e.type for e in baseline.edges]
-    assert (types.count("PART_OF"), types.count("HAS_ARTIFACT"), types.count("INTERFACES_WITH")) == (14, 5, 3)
+    assert (types.count("PART_OF"), types.count("HAS_ARTIFACT"), types.count("INTERFACES_WITH")) == (14, 7, 3)
 
 
 def test_wbs_codes_are_real_881f_appendix_g(baseline):

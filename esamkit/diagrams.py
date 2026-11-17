@@ -231,7 +231,7 @@ def figure_block(pic: Picture, n: int, s: Settings = default_settings, mode: str
                     lines.append(f"> Text in the picture (OCR): {_one_line(words)}")
                     info["read_by"].append("OCR (tesseract)")
     if labels and mode != "off" or pic.labels:
-        lines.append("> Text in the picture: " + "; ".join(_one_line(x) for x in labels[:150]) + ".")
+        lines.append("> Text in the picture: " + "; ".join(_one_line(x) for x in labels[:150]).rstrip(".") + ".")
     if pic.data and mode != "off" and not info["read_by"]:
         why = info["note"] or ("no vision model is configured and no text could be read locally"
                                if mode == "auto" else "no text could be read locally")

@@ -89,6 +89,22 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   reading of a real diagram (quality of the extraction is the model's), the crew wiring (`crew/main.py`,
   `IngestDocumentTool`) which needs CrewAI, and the Cockpit, which shows candidates only through the health panel
   and a node's properties.
+- **Complex Word files**: `word_doc.py` now follows the drawing layer of a `.doc` (OfficeArt: the picture store,
+  the shape tree, anchors in PlcSpaMom, text boxes in PlcftxbxTxt), so floating pictures and drawn shapes stand
+  where they are anchored; EMF/WMF/DIB pictures are taken out; header/footer pictures are left out with a note;
+  scanning for PNG/JPEG remains as the fallback. Both Word readers merge the shapes drawn in one paragraph into one
+  drawing read in reading order (`docmodel.reading_order`, `merge_drawings`) and mark a picture's table cell
+  (`Picture.cell`, "(Picture N, below)"). Tests: `tests/test_word_complex.py`. NOT tried: a `.doc` written by
+  Microsoft Word itself, an embedded OLE object (Visio, chart), PICT pictures, Word-written grouped shapes.
+- **Sample Word documents in the corpus**: `data/documents/originals/SSDD-SUSP-001.doc` and `SSDD-PWR-001.doc`
+  (+ their `.md`, baseline lines attached to `SYS-SUSP` / `SYS-PWR`; generator `tests/fixtures/word/make_samples.py`).
+  The baseline is now 22 vertices / 24 edges (7 documents), the graph with traceability 44 / 78, and the corpus
+  chunks to 46 pieces (8+6+6+7+6 and 7+6 for the two SSDDs, counted with `chunk_markdown`, not ingested). Counts
+  were updated in the DB-backed tests (`test_graph_store`, `test_cockpit`, `test_confidence`) WITHOUT running them.
+  To bring a database in step: `python lessons/03_vector_store/ingest.py`, then `python -m crew.main graph reload`.
+  Still quoting older counts: the "28 chunks / 20-vertex graph" lines below and in `HOW_TO_START.md` (they describe
+  the database as it was left), lesson 03's sample output and the manual's §2.2 row table. Lessons 05/06 answers
+  were not re-run with the two extra documents in the search index.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

@@ -15,7 +15,7 @@ TestCase    ──VERIFIES──────► Requirement    (from its "Verifi
 `lessons/04_graph/load_graph.py` now loads traceability after the baseline:
 
 ```
-After load #2: {'vertices': 20, 'edges': 22}   <- must equal load #1
+After load #2: {'vertices': 22, 'edges': 24}   <- must equal load #1
 Idempotent ✓. Re-loading an unchanged baseline changes nothing.
 
 Traceability (from the documents): 22 requirements, 0 test cases, 0 verifies links
@@ -47,7 +47,7 @@ python lessons/06_missing_document/run_test.py --only brake-std           # runs
   first, so deleted requirements don't linger. Edges cascade with the vertices.
 - **Dangling references are reported, not stored.** A `Verifies: SRS-BRK-999` with no such requirement becomes an
   `unresolved` entry (printed by `load_graph.py`) and stays in the test case's `verifies` property.
-- **Separate from the baseline counts.** The baseline still loads to exactly 20 vertices / 22 edges (the
+- **Separate from the baseline counts.** The baseline still loads to exactly 22 vertices / 24 edges (the
   idempotency check); traceability adds 22 requirements (6 system, 16 software) and 54 edges on top.
 
 `tests/test_traceability.py` covers parsing, loading, revision replacement, the typo report and the prompt.
