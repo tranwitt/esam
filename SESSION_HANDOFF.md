@@ -52,12 +52,13 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   (`ESAM_EMBED_CLIENT=auto|sdk|http`). `ESAM_EMBED_BASE_URL` is a base URL again (`…/v1` → `…/v1/embeddings`); a value
   already ending in `/embeddings` is accepted. The SDK path is tested with a stand-in module only: the session that
   wrote it had no `openai` package. Run `python -m esamkit.environment` against the real endpoint.
-- **System vs software requirements** (ontology v0.6): new doc type `sss` (`requirements: system`), `srs` has
-  `requirements: software`; every Requirement has `level`; `TRACES_TO` links a software requirement to the system
-  requirement on its `Traces to:` line; system requirements are `ALLOCATED_TO` the SSS's owner. Sample:
-  `lessons/06_missing_document/staged/SSS-LTV-001.md`. Tests: `tests/test_requirement_levels.py`. The two SQL queries
-  changed in `graphstores/postgres_cte.py` (`UNTESTED_REQUIREMENTS`, `TRACE_SUMMARY`) have NOT been run against
-  PostgreSQL. An existing graph has no `level` until `python -m crew.main graph reload` (it is read as software).
+- **System vs software requirements** (ontology v0.7, no SSS type): every SRS requirement gets `level` (system |
+  software) and `level_source` (stated via `Level:` on the attribute line | wording, from the subject of its shall |
+  assumed). Rule and word lists: `requirement_classification` in the ontology; code: `traceability.classify`.
+  `TRACES_TO` links a requirement to a parent requirement on its `Traces to:` line. Tests:
+  `tests/test_requirement_levels.py`. The changed SQL in `graphstores/postgres_cte.py` (`UNTESTED_REQUIREMENTS`,
+  `TRACE_SUMMARY`) has NOT been run against PostgreSQL. An existing graph has no `level` until
+  `python -m crew.main graph reload` (read as software until then).
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

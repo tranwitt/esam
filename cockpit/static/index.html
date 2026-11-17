@@ -357,10 +357,11 @@ footer { color: var(--ink-2); font-size: 12px; }
       </div>
       <div class="panel">
         <h2>Requirement coverage</h2>
-        <p class="sub">System requirements are read from each SSS and software requirements from each SRS; the two are counted apart.
-          Test cases are read from each STD; a test case covers a requirement through its <em>Verifies:</em> line, and a requirement
-          with no test case verifying it is untested. A software requirement points at the system requirement it derives from
-          with its <em>Traces to:</em> line.</p>
+        <p class="sub">Requirements are read from each SRS and each is classified as a system requirement (what the subsystem as a
+          whole must do) or a software requirement (what the software must do); the two are counted apart. Test cases are read
+          from each STD; a test case covers a requirement through its <em>Verifies:</em> line, and a requirement with no test case
+          verifying it is untested. A software requirement points at the system requirement it derives from with its
+          <em>Traces to:</em> line.</p>
         <div class="scroll"><table id="tracecov"></table></div>
         <details class="untested" id="flowdown"></details>
         <details class="untested" id="untested"></details>
@@ -477,7 +478,8 @@ const TYPES = {
   Requirement:    { code: "REQ", cls: "req", name: "Requirement",    rank: 7, r: 5 },
   TestCase:       { code: "TC",  cls: "tc",  name: "Test case",      rank: 8, r: 5 },
 };
-// A requirement is a system requirement (from an SSS) or a software requirement (from an SRS): props.level.
+// Every requirement read from an SRS is classified as a system or a software requirement: props.level
+// (props.level_source says how: stated on its Level: line, from its wording, or assumed).
 const LEVELS = { system: { code: "SYS REQ", name: "System requirement" }, software: { code: "SW REQ", name: "Software requirement" } };
 const levelOf = (v) => (v && v.label === "Requirement" ? (v.props.level || "software") : null);
 const typeOf = (v) => {
@@ -714,7 +716,7 @@ function renderHealth() {
 function renderTrace() {
   const tr = M.data.trace;
   if (!tr) { $("#tracecov").replaceChildren(h("tbody", {}, h("tr", {}, h("td.note", {}, "Not available in this snapshot.")))); $("#untested").hidden = true; return; }
-  // System requirements (from an SSS) and software requirements (from an SRS) are counted apart.
+  // System requirements and software requirements (both from the SRS, see props.level) are counted apart.
   // A snapshot made before the split has only the totals: those were all software requirements.
   const rows = tr.summary.filter((r) => r.requirements > 0).map((r) => ({ ...r,
     sys: r.system_requirements ?? 0, sysV: r.system_verified ?? 0,
@@ -1071,7 +1073,7 @@ function renderDetails() {
     const lv = levelOf(v), up = M.traces.filter((e) => e.from_eid === v.eid), down = M.traces.filter((e) => e.to_eid === v.eid);
     const reqItem = (id) => h("li", {}, nodeLink(id), " ", h("span.note", {}, M.byId.get(id)?.props.name || ""));
     parts.push(h("h4", {}, "Level"), h("p", {}, h("span.chip.t-req", {}, LEVELS[lv].code), " ", LEVELS[lv].name,
-      h("span.note", {}, lv === "system" ? " (stated in a system/subsystem specification, SSS)" : " (stated in a software requirements specification, SRS)")));
+      h("span.note", {}, " (" + ({ stated: "stated on its Level: line", wording: "from the subject of its \"shall\"", assumed: "assumed: neither stated nor clear from its wording" }[v.props.level_source] || "not recorded; reload the graph") + ")")));
     if (up.length) parts.push(h("h4", {}, "Traces to"), h("ul", {}, up.map((e) => reqItem(e.to_eid))));
     else if (lv === "software" && [...M.byId.values()].some((x) => levelOf(x) === "system"))
       parts.push(h("h4", {}, "Traces to"), h("p", {}, h("span.note", {}, "no system requirement")));

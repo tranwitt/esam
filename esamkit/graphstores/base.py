@@ -80,8 +80,7 @@ class GraphStore(ABC):
 
     @abstractmethod
     def trace_summary(self) -> list[dict]:
-        """Per owner (every subsystem; the vehicle or a system when it has
-        requirements): how many requirements are allocated to it and how many
-        have a test case verifying them, in total and split by level
+        """Per subsystem: how many requirements are allocated to it and how
+        many have a test case verifying them, in total and split by level
         (system_requirements / system_verified, software_requirements /
-        software_verified). `label` says what the owner is."""
+        software_verified)."""

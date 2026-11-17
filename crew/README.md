@@ -183,22 +183,23 @@ split over several SRS parts all land on the subsystem. The required-documents r
 the type; an incomplete set shows as a warning in health check 5 and beside the document in the Cockpit.
 Documents without `part` (two ICDs for one ECU) are simply two documents.
 
-**System requirements and software requirements.** Requirements are read out of specifications, and the kind of
-specification decides whose requirement each one is (the ontology's `document_types.<type>.requirements`):
+**System requirements and software requirements.** Every requirement read from an SRS is classified as a
+**system** requirement (what the subsystem as a whole must do, whatever mix of hardware and software does it) or a
+**software** requirement (what the software itself must do). The rule is in the ontology
+(`requirement_classification` in `data/ontology/esam_ontology.yaml`) and is applied in this order:
 
-| Document | Requirements are | Ids | Allocated to |
-|---|---|---|---|
-| SSS, System/Subsystem Specification | **system** requirements | `SSS-LTV-010` | what the SSS is attached to: the vehicle, a system or a subsystem |
-| SRS, Software Requirements Specification | **software** requirements | `SRS-BRK-011` | the SRS's subsystem |
+| Decided by | How | Example |
+|---|---|---|
+| `stated` | `Level: system` or `Level: software` on the requirement's attribute line | `Level: system \| Verification: T` |
+| `wording` | the subject of its "shall" (the words just before it). A software word wins | "… the software shall" → software; "The Brake Control ECU shall" → system; "the ECU software shall" → software |
+| `assumed` | neither: the default (`software`), and the review asks for a `Level:` | "Wheel speed shall be sampled at 1 kHz." |
 
-Every requirement in the graph carries `level: system` or `level: software`; it is never guessed from the wording.
-A software requirement names the system requirement it derives from on its attribute line
-(`Verification: T | Traces to: SSS-LTV-010`), which becomes a `TRACES_TO` link, so the review of an SRS shows each
-parent's text and the review of an SSS shows which system requirements no software requirement has picked up.
-A requirement line carrying the other level's id (an `SSS-…` line in an SRS) is reported and not read as that
-document's requirement. Test cases verify either level. The health report, `verified_by`, `graph reload` and the
-Cockpit's requirement coverage all show the two apart. A sample system specification for the vehicle:
-`python -m crew.main review lessons/06_missing_document/staged/SSS-LTV-001.md`.
+Each requirement in the graph carries `level` and `level_source`. A software requirement names the system
+requirement it derives from on its attribute line (`Verification: T | Traces to: SRS-BRK-005`), which becomes a
+`TRACES_TO` link. The review of an SRS lists the two levels apart with counts, shows each parent's text, and says
+which system requirements no software requirement traces to. The health report, `verified_by`, `graph reload` and
+the Cockpit's requirement coverage show the two apart as well. To change which words mean which level, edit the
+two `subjects` lists; no code changes.
 
 **System-level documents (SSDD).** Every document type is attached to a subsystem except the SSDD, which the
 ontology lets sit on the vehicle system, one system or a subsystem (`document_types.ssdd.attaches_to:

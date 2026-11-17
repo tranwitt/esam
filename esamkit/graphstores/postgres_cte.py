@@ -274,7 +274,7 @@ SELECT s.properties->>'id'   AS eid,
        count(r.id)           AS requirements,
        count(r.id) FILTER (WHERE EXISTS (
            SELECT 1 FROM graph_edges v WHERE v.to_id = r.id AND v.type = 'VERIFIES')) AS verified,
-       -- the same two numbers, split by whose requirement it is (traceability.py: level)
+       -- the same two numbers, split by the requirement's level (traceability.classify)
        count(r.id) FILTER (WHERE r.properties->>'level' = 'system') AS system_requirements,
        count(r.id) FILTER (WHERE r.properties->>'level' = 'system' AND EXISTS (
            SELECT 1 FROM graph_edges v WHERE v.to_id = r.id AND v.type = 'VERIFIES')) AS system_verified,
@@ -285,9 +285,8 @@ FROM graph_vertices s
 LEFT JOIN graph_edges a    ON a.to_id = s.id AND a.type = 'ALLOCATED_TO'
 LEFT JOIN graph_vertices r ON r.id = a.from_id AND r.label = 'Requirement'
 WHERE s.label = 'Subsystem'
-   OR (s.label IN ('Vehicle', 'System') AND r.id IS NOT NULL)   -- owners above a subsystem only when they have requirements
 GROUP BY s.id
-ORDER BY (s.label = 'Subsystem'), eid
+ORDER BY eid
 """
 
 # ─────────────────────────────────────────────────────────────────────────────

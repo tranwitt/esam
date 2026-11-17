@@ -77,10 +77,12 @@ class Ontology:
                     out.setdefault(t, []).append(rule.get("why", ""))
         return {t: out[t] for t in self.document_types if t in out}
 
-    def requirement_levels(self) -> dict[str, str]:
-        """{document type: level} for the types whose documents state
-        requirements: {"sss": "system", "srs": "software"}."""
-        return {t: d["requirements"] for t, d in self.document_types.items() if d.get("requirements")}
+    def requirement_classification(self) -> dict:
+        """How an SRS requirement is told to be a system or a software
+        requirement: {"default": level, "subjects": {level: [words]}}."""
+        rc = self.data.get("requirement_classification") or {}
+        return {"default": rc.get("default") or "software",
+                "subjects": {k: [str(w).lower() for w in v or []] for k, v in (rc.get("subjects") or {}).items()}}
 
     def attach_classes(self, doc_type: str | None) -> list[str]:
         """The classes a document of this type may be attached to: the type's
@@ -116,11 +118,11 @@ class Ontology:
                     out.append(Finding("error", f"relationship {rname}", f"unknown class {end!r}"))
             for pname, spec in (r.get("properties") or {}).items():
                 check_attr(f"relationship {rname}.{pname}", spec)
-        levels = set(self.value_sets.get("requirement_level") or {})
-        for tname, level in self.requirement_levels().items():
-            if level not in levels:
-                out.append(Finding("error", f"document type {tname}",
-                                   f"requirements = {level!r} is not in value_sets.requirement_level ({', '.join(sorted(levels))})"))
+        levels, rc = set(self.value_sets.get("requirement_level") or {}), self.requirement_classification()
+        for level in [rc["default"], *rc["subjects"]]:
+            if levels and level not in levels:
+                out.append(Finding("error", "requirement_classification",
+                                   f"{level!r} is not in value_sets.requirement_level ({', '.join(sorted(levels))})"))
         owners = self.relationships.get("HAS_ARTIFACT", {}).get("from", [])
         for tname in self.document_types:
             for cname in self.attach_classes(tname):

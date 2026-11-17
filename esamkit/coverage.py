@@ -51,7 +51,7 @@ def mentioned_subsystems(question: str, subsystems: list[dict]) -> list[str]:
 
 def missing_documents(graph: GraphStore, subsystem_eids: list[str], doc_types: list[str]) -> list[dict]:
     """[{eid, doc_type}] for every (subsystem, type) pair with no such document.
-    A system-level document (an SSS or SSDD attached to the subsystem's
+    A system-level document (an SSDD attached to the subsystem's
     system or to the vehicle) counts: it covers the subsystems under it."""
     missing = []
     for t in doc_types:

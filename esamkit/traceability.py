@@ -1,33 +1,31 @@
 """
 Traceability: requirements and test cases as vertices of the graph.
 
-The baseline lists DOCUMENTS. Inside a specification are the requirements;
-inside an STD are the test cases, each with a `Verifies:` line (SE manual
-§9). This module reads them out, deterministically (no AI), and turns them
-into:
+The baseline lists DOCUMENTS. Inside an SRS are the requirements; inside an
+STD are the test cases, each with a `Verifies:` line (SE manual §9). This
+module reads them out, deterministically (no AI), and turns them into:
 
-    Requirement ──SPECIFIED_IN──► DesignArtifact (its SSS or SRS)
-    Requirement ──ALLOCATED_TO──► the document's owner
+    Requirement ──SPECIFIED_IN──► DesignArtifact (its SRS)
+    Requirement ──ALLOCATED_TO──► Subsystem      (the SRS's subsystem)
     Requirement ──TRACES_TO─────► Requirement    (its parent, from `Traces to:`)
     TestCase    ──SPECIFIED_IN──► DesignArtifact (its STD)
     TestCase    ──VERIFIES──────► Requirement
 
-SYSTEM and SOFTWARE requirements are kept apart. Which one a requirement is
-comes from the kind of document it is stated in, as the ontology says
-(document_types.<type>.requirements), never from its wording:
+Every requirement is classified as a SYSTEM requirement (what the subsystem
+as a whole must do, whatever mix of hardware and software does it) or a
+SOFTWARE requirement (what the software itself must do), and carries
+`level` and `level_source`. All of them come from the SRS; the rule is the
+ontology's (`requirement_classification`), applied in this order:
 
-    SSS  System/Subsystem Specification        level: system     ids SSS-…
-    SRS  Software Requirements Specification   level: software   ids SRS-…
+    1. stated    its attribute line says `Level: system` or `Level: software`
+    2. wording   the subject of its "shall": "... the software shall" is
+                 software; "The Brake Control ECU shall" is system
+    3. assumed   neither: the ontology's default (software), and the review
+                 says it was assumed
 
-Every Requirement carries `level`. A system requirement is allocated to
-what its SSS is attached to (the vehicle, a system or a subsystem); a
-software requirement to its SRS's subsystem. A software requirement whose
-`Traces to:` names a system requirement gets a TRACES_TO link to it, which
-is how "which system requirements has the software not picked up?" is
-answered.
-
-which answers "which requirements have no test?" and "what verifies
-SRS-BRK-011?" with a graph query instead of a guess.
+A software requirement whose `Traces to:` names a system requirement gets a
+TRACES_TO link to it, which answers "which system requirements has no
+software requirement picked up?".
 
 Every extracted vertex records `source_artifact` (the document it came
 from), so reloading a document first removes what its previous revision
@@ -35,11 +33,12 @@ contributed: a deleted requirement doesn't linger.
 
 The formats it reads are the ones the manual asks SEs to write:
 
-    - **SSS-LTV-010** The vehicle shall prevent wheel lock-up ...        (in an SSS)
+    - **SRS-BRK-005** The Brake Control ECU shall prevent wheel lock-up ...
+      Level: system | Verification: T
 
-    - **SRS-BRK-011** The software shall release brake pressure ...      (in an SRS)
+    - **SRS-BRK-011** The software shall release brake pressure ...
       (continuation lines indented)
-      Verification: T | Traces to: SSS-LTV-010
+      Verification: T | Traces to: SRS-BRK-005
 
     ## TC-BRK-011 — Pressure release time on incipient wheel lock-up
     Verifies: SRS-BRK-011.
@@ -61,7 +60,7 @@ _FIELD = re.compile(r"^(?P<key>Verifies|Method|Steps|Pass criteria):\s*(?P<value
 _ID = re.compile(r"\b[A-Z]+-[A-Z0-9]+-\d{3}\b")
 # The attribute line under a requirement (SE manual §9.4):
 #   Safety: SwCI 2 | Timing: 20 ms max | Verification: T | Traces to: SSF-ENG-01 | Basis: MIL-STD-882E 4.4.2
-_ATTR = re.compile(r"^(?P<key>Safety|Timing|Verification|Traces to|Basis):\s*(?P<value>.*)$", re.I)
+_ATTR = re.compile(r"^(?P<key>Safety|Timing|Verification|Traces to|Basis|Level):\s*(?P<value>.*)$", re.I)
 _LISTS = {"traces_to", "basis", "verification"}
 
 
@@ -89,58 +88,70 @@ def _short(text: str, n: int = 90) -> str:
     return first if len(first) <= n else first[: n - 1].rstrip() + "…"
 
 
-DEFAULT_LEVELS = {"sss": "system", "srs": "software"}       # used when the ontology does not say
+LEVELS = ("system", "software")
+_LEVEL_WORDS = {"system": "system", "sys": "system", "software": "software", "sw": "software"}
+DEFAULT_CLASSIFICATION = {"default": "software", "subjects": {
+    "software": ["software", "firmware", "csci", "application", "program", "code", "algorithm", "task", "driver"],
+    "system": ["system", "subsystem", "vehicle", "ecu", "unit", "module", "controller", "hardware", "equipment"]}}
 
 
-def requirement_levels() -> dict[str, str]:
-    """{document type: level} from the ontology: which documents state
-    requirements, and whether they are system or software requirements."""
+def classification_rules() -> dict:
+    """The ontology's `requirement_classification` (the built-in one if the ontology cannot be read)."""
     try:
         from .ontology import default_ontology
-        return default_ontology().requirement_levels() or dict(DEFAULT_LEVELS)
+        rules = default_ontology().requirement_classification()
+        return rules if rules["subjects"] else DEFAULT_CLASSIFICATION
     except Exception:
-        return dict(DEFAULT_LEVELS)
+        return DEFAULT_CLASSIFICATION
 
 
-def id_prefix(requirement_id: str) -> str:
-    return requirement_id.split("-", 1)[0].lower()
+def stated_level(value: str | None) -> str | None:
+    """`Level:` as written -> "system" | "software", or None when it is neither."""
+    return _LEVEL_WORDS.get(re.sub(r"\s+requirement$", "", str(value or "").strip().lower()))
 
 
-def level_of_id(requirement_id: str, levels: dict[str, str] | None = None) -> str | None:
-    """The level a requirement id announces (SSS-… system, SRS-… software), or None."""
-    return (levels or requirement_levels()).get(id_prefix(requirement_id))
+def shall_subject(text: str) -> str:
+    """The words that say WHO shall: the clause just before the first "shall".
+    "On detection of a fault, the software shall revert ..." -> "the software"."""
+    m = re.search(r"^(?P<before>.*?)\bshall\b", text, re.I | re.S)
+    if not m:
+        return ""
+    clause = re.split(r"[,;:]", m["before"])[-1]
+    return " ".join(clause.lower().split())
 
 
-def misplaced_requirements(text: str, doc_type: str, levels: dict[str, str] | None = None) -> list[dict]:
-    """Requirement lines whose id belongs to the OTHER level's document: a
-    system requirement id (SSS-…) written as a requirement in an SRS, or the
-    reverse. They are not read as this document's requirements.
-    [{id, level, belongs_in}]"""
-    levels = levels or requirement_levels()
-    out = []
-    for line in text.splitlines():
-        m = _REQ_LINE.match(line)
-        if m and id_prefix(m["id"]) != doc_type and id_prefix(m["id"]) in levels:
-            out.append({"id": m["id"], "level": levels[id_prefix(m["id"])], "belongs_in": id_prefix(m["id"]).upper()})
-    return out
+def classify(text: str, attrs: dict | None = None, rules: dict | None = None) -> tuple[str, str]:
+    """(level, how it was decided) for one requirement.
+    how: "stated" (its `Level:`), "wording" (the subject of its shall) or
+    "assumed" (the default). A software word in the subject wins: "the ECU
+    software shall" is a software requirement."""
+    rules = rules or classification_rules()
+    said = stated_level((attrs or {}).get("level"))
+    if said:
+        return said, "stated"
+    subject = shall_subject(text)
+    for level in ("software", *[k for k in rules["subjects"] if k != "software"]):
+        if any(re.search(rf"(?<![a-z0-9]){re.escape(w)}(?![a-z0-9])", subject) for w in rules["subjects"].get(level, [])):
+            return level, "wording"
+    return rules["default"], "assumed"
 
 
-def read_requirements(text: str, artifact_id: str, subsystem: str, level: str = "software",
-                      doc_type: str | None = None, levels: dict[str, str] | None = None) -> Extracted:
-    """The requirements stated in one document, each marked with `level`
-    ("system" for an SSS, "software" for an SRS). `subsystem` is what the
-    document is attached to. With `doc_type` given, a line carrying the other
-    level's id (see misplaced_requirements) is left out: one requirement has
-    one level and one home."""
+def read_requirements(text: str, artifact_id: str, subsystem: str, rules: dict | None = None) -> Extracted:
+    """The requirements stated in an SRS, each classified as a system or a
+    software requirement (`level`, `level_source`; see classify)."""
     out, section, cur = Extracted(), "", None
-    foreign = {p for p in (levels or requirement_levels()) if p != doc_type} if doc_type else set()
+    rules = rules or classification_rules()
 
     def close():
         if cur:
             body = " ".join(cur["lines"]).strip()
+            level, how = classify(body, cur["attrs"], rules)
+            attrs = {k: v for k, v in cur["attrs"].items() if k != "level"}
+            if cur["attrs"].get("level") and how != "stated":
+                attrs["level_as_written"] = cur["attrs"]["level"]       # e.g. "Level: hardware": reported by the review
             out.vertices.append(Vertex("Requirement", {
-                "id": cur["id"], "name": _short(body), "text": body, "level": level, "section": cur["section"],
-                "source_artifact": artifact_id, "subsystem": subsystem, **cur["attrs"]}))
+                "id": cur["id"], "name": _short(body), "text": body, "level": level, "level_source": how,
+                "section": cur["section"], "source_artifact": artifact_id, "subsystem": subsystem, **attrs}))
             out.edges += [Edge(cur["id"], artifact_id, "SPECIFIED_IN"), Edge(cur["id"], subsystem, "ALLOCATED_TO")]
             # A parent that is written as a requirement id; kept only if that requirement exists (load_traceability).
             out.edges += [Edge(cur["id"], parent, "TRACES_TO") for parent in dict.fromkeys(
@@ -150,8 +161,6 @@ def read_requirements(text: str, artifact_id: str, subsystem: str, level: str = 
         if m := _SECTION.match(line):
             close(); cur = None
             section = m["title"].strip()
-        elif (m := _REQ_LINE.match(line)) and id_prefix(m["id"]) in foreign:
-            close(); cur = None                           # the other level's requirement: not this document's
         elif m := _REQ_LINE.match(line):
             close()
             cur = {"id": m["id"], "lines": [m["text"]], "section": section, "attrs": {}}
@@ -199,10 +208,9 @@ def read_test_cases(text: str, artifact_id: str) -> Extracted:
 
 
 def extract(baseline: Baseline, documents_dir: Path, only: set[str] | None = None) -> Extracted:
-    """Requirements from every specification (system requirements from an
-    SSS, software requirements from an SRS) and test cases from every STD the
-    baseline lists (or only the artifact ids in `only`)."""
-    out, levels = Extracted(), requirement_levels()
+    """Requirements from every SRS (each classified system or software) and
+    test cases from every STD the baseline lists (or only the artifact ids in `only`)."""
+    out, rules = Extracted(), classification_rules()
     for rel, facts in baseline.artifact_index().items():
         if only is not None and facts["artifact_id"] not in only:
             continue
@@ -210,9 +218,8 @@ def extract(baseline: Baseline, documents_dir: Path, only: set[str] | None = Non
         if not path.exists():
             continue
         t = facts["artifact_type"]
-        if t in levels:
-            part = read_requirements(read_document(path), facts["artifact_id"], facts["subsystem_id"],
-                                     levels[t], t, levels)
+        if t == "srs":
+            part = read_requirements(read_document(path), facts["artifact_id"], facts["subsystem_id"], rules)
         elif t == "std":
             part = read_test_cases(read_document(path), facts["artifact_id"])
         else:

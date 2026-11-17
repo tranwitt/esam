@@ -1,7 +1,7 @@
-"""System requirements and software requirements are kept apart. Which one a
-requirement is comes from the document it is read from, as the ontology says:
-an SSS states system requirements (SSS-…), an SRS software requirements
-(SRS-…). A software requirement traces up to a system requirement."""
+"""Every requirement read from an SRS is classified as a system requirement
+or a software requirement: by `Level:` on its attribute line, else by the
+subject of its "shall", else the ontology's default. A software requirement
+traces up to a system requirement."""
 
 import copy
 import shutil
@@ -11,18 +11,14 @@ import pytest
 import yaml
 
 from esamkit.baseline import load_baseline
-from esamkit.config import PROJECT_ROOT, settings
+from esamkit.config import settings
 from esamkit.coverage import missing_documents
-from esamkit.intake import baseline_line, ontology_check, read_header, receive, review_document
+from esamkit.intake import baseline_line, ontology_check, review_document
 from esamkit.ontology import Ontology, check_baseline, default_ontology
-from esamkit.traceability import (extract, level_of_id, load_traceability, misplaced_requirements, read_requirements,
-                                  requirement_levels)
+from esamkit.traceability import classify, extract, load_traceability, read_requirements, shall_subject, stated_level
 from test_graph_admin import FakeGraph
 
-SSS = PROJECT_ROOT / "lessons" / "06_missing_document" / "staged" / "SSS-LTV-001.md"
-SSS_ENTRY = {"id": "SSS-LTV-001", "name": "SYNTH-LTV Vehicle System/Subsystem Specification", "type": "sss",
-             "revision": "A", "attached_to": "V-001", "file": "SSS-LTV-001.md"}
-SRS2 = """# SRS-BRK-002 — Brake Control ECU Software Requirements, Part 2
+SRS2 = """# SRS-BRK-002 — Brake Control ECU Requirements, Part 2
 
 | Document | Type | Revision | Subsystem |
 |---|---|---|---|
@@ -30,19 +26,32 @@ SRS2 = """# SRS-BRK-002 — Brake Control ECU Software Requirements, Part 2
 
 ## 3. Requirements
 
+### 3.1 What the unit must do
+
+- **SRS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
+  Safety: SwCI 1 | Verification: T, A
+
+- **SRS-BRK-051** Service braking shall remain available when the vehicle data bus has failed.
+  Level: system | Safety: SwCI 1 | Verification: T
+
+- **SRS-BRK-052** The Brake Control ECU shall inform the driver of a brake fault within 500 ms.
+  Timing: 500 ms max | Verification: T
+
+### 3.2 What the software must do
+
 - **SRS-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
-  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SSS-LTV-010
+  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-BRK-050
 
-- **SRS-BRK-061** The software shall set the EBC1 fault bit within 100 ms of a valve fault.
-  Verification: T | Traces to: SSS-LTV-011, SSS-LTV-021, ICD-BRK-001
+- **SRS-BRK-061** On a valve fault, the ECU software shall set the EBC1 fault bit within 100 ms.
+  Verification: T | Traces to: SRS-BRK-052, ICD-BRK-001
 
-- **SRS-BRK-062** The software shall log the fault code to non-volatile memory.
-  Verification: I | Traces to: SSF-BRK-02, SSS-LTV-099
+- **SRS-BRK-062** Fault codes shall be logged to non-volatile memory.
+  Level: Software | Verification: I | Traces to: SSF-BRK-02, SRS-BRK-099
 
-- **SRS-BRK-063** The software shall run its self-test at power-up.
+- **SRS-BRK-063** Wheel speed shall be sampled at 1 kHz.
   Verification: T
 """
-SRS2_ENTRY = {"id": "SRS-BRK-002", "name": "Brake Control ECU Software Requirements, Part 2", "type": "srs",
+SRS2_ENTRY = {"id": "SRS-BRK-002", "name": "Brake Control ECU Requirements, Part 2", "type": "srs",
               "revision": "A", "attached_to": "SUB-BRK-ECU", "file": "SRS-BRK-002.md"}
 
 
@@ -62,6 +71,19 @@ class Graph(FakeGraph):
         have = {e["from_eid"] for e in self.e.values() if e["type"] == "HAS_ARTIFACT" and e["props"].get("artifact_type") == t}
         return [{"eid": k} for k, v in self.v.items() if v["label"] == "Subsystem" and k not in have]
 
+    def message_origins(self, message):
+        return []
+
+    def verified_by(self, requirement_id):
+        return [{"eid": e["from_eid"], "document": self.v[e["from_eid"]]["props"]["source_artifact"]}
+                for e in self.e.values() if e["type"] == "VERIFIES" and e["to_eid"] == requirement_id]
+
+    def untested_requirements(self):
+        tested = {e["to_eid"] for e in self.e.values() if e["type"] == "VERIFIES"}
+        return [{"eid": k, "name": v["props"]["name"], "level": v["props"]["level"], "subsystem": v["props"]["subsystem"],
+                 "document": v["props"]["source_artifact"]}
+                for k, v in sorted(self.v.items()) if v["label"] == "Requirement" and k not in tested]
+
 
 @pytest.fixture
 def onto():
@@ -72,11 +94,9 @@ def onto():
 def s(tmp_path):
     docs = tmp_path / "documents"
     shutil.copytree(settings.documents_dir, docs)
-    shutil.copy2(SSS, docs / "SSS-LTV-001.md")
     (docs / "SRS-BRK-002.md").write_text(SRS2)
     path = tmp_path / "baseline.yaml"
-    path.write_text(settings.baseline_yaml.read_text().rstrip("\n") + "\n" + baseline_line(SSS_ENTRY) + "\n"
-                    + baseline_line(SRS2_ENTRY) + "\n")
+    path.write_text(settings.baseline_yaml.read_text().rstrip("\n") + "\n" + baseline_line(SRS2_ENTRY) + "\n")
     return replace(settings, baseline_yaml=path, documents_dir=docs)
 
 
@@ -86,140 +106,146 @@ def loaded(s):
     return g, base, load_traceability(g, base, s.documents_dir)
 
 
-def test_the_ontology_says_which_documents_state_which_requirements(onto):
-    assert onto.requirement_levels() == {"sss": "system", "srs": "software"} == requirement_levels()
-    assert set(onto.value_sets["requirement_level"]) == {"system", "software"}
-    assert onto.attach_classes("sss") == ["Vehicle", "System", "Subsystem"] and onto.check_self() == []
-    assert (level_of_id("SSS-LTV-010"), level_of_id("SRS-BRK-011"), level_of_id("ICD-BRK-001")) == ("system", "software", None)
+def test_the_rule_is_the_ontologys(onto):
+    rc = onto.requirement_classification()
+    assert rc["default"] == "software" and "software" in rc["subjects"]["software"] and "ecu" in rc["subjects"]["system"]
+    assert set(onto.value_sets["requirement_level"]) == {"system", "software"} and onto.check_self() == []
+    assert "sss" not in onto.document_types                                   # requirements come from the SRS only
+    assert not ontology_check(onto, settings.baseline_yaml, {"id": "SSS-LTV-001", "name": "x", "type": "sss", "revision": "A",
+                                                              "attached_to": "V-001", "file": "SSS-LTV-001.md"})["ok"]
     raw = copy.deepcopy(onto.data)
-    raw["document_types"]["sss"]["requirements"] = "hardware"
-    assert any("requirements = 'hardware' is not in value_sets.requirement_level" in f.message for f in Ontology(raw).check_self())
+    raw["requirement_classification"]["subjects"]["hardware"] = ["bracket"]
+    assert any("'hardware' is not in value_sets.requirement_level" in f.message for f in Ontology(raw).check_self())
+    # an SE's own vocabulary changes the answer without touching code
+    raw = copy.deepcopy(onto.data)
+    raw["requirement_classification"]["subjects"]["system"].append("gearbox")
+    assert classify("The gearbox shall shift within 300 ms.", rules=Ontology(raw).requirement_classification()) == ("system", "wording")
+    assert classify("The gearbox shall shift within 300 ms.") == ("software", "assumed")
 
 
-def test_an_sss_is_a_document_like_any_other(onto):
-    assert read_header(SSS.read_text()) == SSS_ENTRY
-    for owner in ("V-001", "SYS-SUSP", "SUB-BRK-ECU"):
-        assert ontology_check(onto, settings.baseline_yaml, dict(SSS_ENTRY, attached_to=owner))["ok"]
+@pytest.mark.parametrize("text,attrs,expected", [
+    ("The software shall execute the wheel-slip control loop every 5 ms.", {}, ("software", "wording")),
+    ("On detection of an internal fault, the software shall revert the hydraulic unit.", {}, ("software", "wording")),
+    ("In blackout mode the software shall suppress all graphics.", {}, ("software", "wording")),
+    ("The Brake Control ECU shall prevent wheel lock-up.", {}, ("system", "wording")),
+    ("The system shall report faults to the driver.", {}, ("system", "wording")),
+    ("The vehicle shall keep service braking available.", {}, ("system", "wording")),
+    ("The ECU software shall log faults.", {}, ("software", "wording")),            # a software word wins
+    ("The ECUs shall share one bus.", {}, ("software", "assumed")),                 # whole words only: "ecus" is not "ecu"
+    ("Wheel speed shall be sampled at 1 kHz.", {}, ("software", "assumed")),
+    ("The software is assigned Software Criticality Index 1.", {}, ("software", "assumed")),      # no shall: no subject
+    ("The software shall report what the system shall do.", {}, ("software", "wording")),         # the FIRST shall's subject
+    ("The software shall do it.", {"level": "System"}, ("system", "stated")),       # stated beats wording
+    ("The ECU shall do it.", {"level": "software requirement"}, ("software", "stated")),
+    ("The ECU shall do it.", {"level": "SW"}, ("software", "stated")),
+    ("The ECU shall do it.", {"level": "hardware"}, ("system", "wording")),         # not a level: falls back to the wording
+])
+def test_classify(text, attrs, expected):
+    assert classify(text, attrs) == expected
 
 
-def test_the_level_comes_from_the_document(s, onto):
-    ex = extract(load_baseline(s.baseline_yaml), s.documents_dir)
-    reqs = {v.eid: v.props for v in ex.vertices if v.label == "Requirement"}
-    by_level = lambda lv: sorted(r for r, p in reqs.items() if p["level"] == lv)                   # noqa: E731
-    assert by_level("system") == ["SSS-LTV-010", "SSS-LTV-011", "SSS-LTV-012", "SSS-LTV-020", "SSS-LTV-021", "SSS-LTV-030"]
-    assert len(by_level("software")) == 16 + 4 and all(r.startswith("SRS-") for r in by_level("software"))
-    assert all(p["source_artifact"].startswith("SSS-") == (p["level"] == "system") for p in reqs.values())
-    # a system requirement is allocated to what its SSS is attached to; a software one to its SRS's subsystem
-    alloc = {e.from_eid: e.to_eid for e in ex.edges if e.type == "ALLOCATED_TO"}
-    assert alloc["SSS-LTV-010"] == "V-001" and alloc["SRS-BRK-060"] == "SUB-BRK-ECU" and reqs["SSS-LTV-010"]["subsystem"] == "V-001"
-    assert reqs["SSS-LTV-011"]["timing"] == "500 ms max" and reqs["SSS-LTV-010"]["verification"] == ["T", "A"]
-    assert [f for f in check_baseline(onto, yaml.safe_load(s.baseline_yaml.read_text()), s.documents_dir) if f.level == "error"] == []
+def test_the_subject_is_the_clause_before_the_first_shall():
+    assert shall_subject("On detection of an internal fault, the software shall revert.") == "the software"
+    assert shall_subject("The Brake  Control\nECU shall prevent lock-up.") == "the brake control ecu"
+    assert shall_subject("No such word here.") == ""
+    assert (stated_level("system"), stated_level(" SYS "), stated_level("Software"), stated_level("both"), stated_level(None)) == (
+        "system", "system", "software", None, None)
+
+
+def test_every_requirement_of_an_srs_gets_a_level():
+    reqs = {v.eid: v.props for v in read_requirements(SRS2, "SRS-BRK-002", "SUB-BRK-ECU").vertices}
+    assert {k: (p["level"], p["level_source"]) for k, p in reqs.items()} == {
+        "SRS-BRK-050": ("system", "wording"), "SRS-BRK-051": ("system", "stated"), "SRS-BRK-052": ("system", "wording"),
+        "SRS-BRK-060": ("software", "wording"), "SRS-BRK-061": ("software", "wording"),
+        "SRS-BRK-062": ("software", "stated"), "SRS-BRK-063": ("software", "assumed")}
+    assert reqs["SRS-BRK-051"]["safety"] == "SwCI 1" and reqs["SRS-BRK-051"]["verification"] == ["T"]    # the other attributes still read
+    assert all("level_as_written" not in p for p in reqs.values())
+
+
+def test_the_shipped_documents_are_all_software_requirements(onto):
+    ex = extract(load_baseline(settings.baseline_yaml), settings.documents_dir)
+    reqs = [v.props for v in ex.vertices if v.label == "Requirement"]
+    assert len(reqs) == 16 and {p["level"] for p in reqs} == {"software"}
+    assert {p["level_source"] for p in reqs} == {"wording"}                    # each says "the software ... shall"
+    assert [f for f in check_baseline(onto, yaml.safe_load(settings.baseline_yaml.read_text()), settings.documents_dir)
+            if f.level == "error"] == []
 
 
 def test_software_requirements_trace_up_to_system_requirements(s):
     g, _, res = loaded(s)
-    assert (res["requirements"], res["system_requirements"], res["software_requirements"]) == (26, 6, 20)
+    assert (res["requirements"], res["system_requirements"], res["software_requirements"]) == (23, 3, 20)
     traces = sorted((e["from_eid"], e["to_eid"]) for e in g.e.values() if e["type"] == "TRACES_TO")
     # only parents that ARE requirements: not the ICD, not the safety function, not the one nobody states
-    assert traces == [("SRS-BRK-060", "SSS-LTV-010"), ("SRS-BRK-061", "SSS-LTV-011"), ("SRS-BRK-061", "SSS-LTV-021")]
-    assert res["traces"] == 3
-    assert g.v["SRS-BRK-062"]["props"]["traces_to"] == ["SSF-BRK-02", "SSS-LTV-099"]              # kept as written
-    assert g.v["SSS-LTV-010"]["props"]["level"] == "system" and g.v["SRS-BRK-060"]["props"]["level"] == "software"
+    assert traces == [("SRS-BRK-060", "SRS-BRK-050"), ("SRS-BRK-061", "SRS-BRK-052")] and res["traces"] == 2
+    assert g.v["SRS-BRK-062"]["props"]["traces_to"] == ["SSF-BRK-02", "SRS-BRK-099"]              # kept as written
+    assert g.v["SRS-BRK-050"]["props"]["level"] == "system" and g.v["SRS-BRK-060"]["props"]["level"] == "software"
+    # both levels are the subsystem's: the SRS is attached to it
+    assert {e["to_eid"] for e in g.e.values() if e["type"] == "ALLOCATED_TO" and e["from_eid"].startswith("SRS-BRK-05")} == {"SUB-BRK-ECU"}
     again = load_traceability(g, load_baseline(s.baseline_yaml), s.documents_dir, only={"SRS-BRK-002"})     # one document reloaded
-    assert again["traces"] == 3 and again["system_requirements"] == 0 and again["software_requirements"] == 4
-    assert sum(e["type"] == "TRACES_TO" for e in g.e.values()) == 3
+    assert (again["traces"], again["system_requirements"], again["software_requirements"]) == (2, 3, 4)
+    assert sum(e["type"] == "TRACES_TO" for e in g.e.values()) == 2
 
 
-def test_a_requirement_of_the_other_level_is_not_taken_in():
-    srs = SRS2 + "\n- **SSS-LTV-010** The vehicle shall prevent sustained lock-up.\n\n- **SRS-BRK-064** The software shall do one more thing.\n"
-    assert misplaced_requirements(srs, "srs") == [{"id": "SSS-LTV-010", "level": "system", "belongs_in": "SSS"}]
-    ids = [v.eid for v in read_requirements(srs, "SRS-BRK-002", "SUB-BRK-ECU", "software", "srs").vertices]
-    assert ids == ["SRS-BRK-060", "SRS-BRK-061", "SRS-BRK-062", "SRS-BRK-063", "SRS-BRK-064"]
-    sss = SSS.read_text() + "\n- **SRS-BRK-011** The software shall release pressure.\n"
-    assert misplaced_requirements(sss, "sss") == [{"id": "SRS-BRK-011", "level": "software", "belongs_in": "SRS"}]
-    assert all(v.props["level"] == "system" and v.eid.startswith("SSS-")
-               for v in read_requirements(sss, "SSS-LTV-001", "V-001", "system", "sss").vertices)
-    # read without a document type (older callers): everything, as software
-    assert all(v.props["level"] == "software" for v in read_requirements(SRS2, "SRS-BRK-002", "SUB-BRK-ECU").vertices)
-
-
-def test_reviewing_a_system_specification(s):
-    g, _, _ = loaded(s)
-    rev = review_document(SSS.read_text(), SSS_ENTRY, g, s)
-    assert rev["requirement_level"] == "system" and rev["issues"] == []
-    reqs = {r["id"]: r for r in rev["requirements"]}
-    assert len(reqs) == 6 and all(r["level"] == "system" for r in reqs.values())
-    assert reqs["SSS-LTV-010"]["traced_by"] == ["SRS-BRK-060"] and reqs["SSS-LTV-012"]["traced_by"] == []
-    bad = SSS.read_text() + "\n- **SSS-LTV-040** Braking is important.\n\n- **SRS-BRK-011** The software shall release pressure.\n"
-    issues = review_document(bad, SSS_ENTRY, g, s)["issues"]
-    assert "SSS-LTV-040: no 'shall'" in issues
-    assert any(i.startswith("SRS-BRK-011: a software requirement id in an SSS, which states system requirements.") for i in issues)
-    empty = review_document("# SSS-LTV-001 — x\n\n## 1. Scope\n\nNothing.\n", SSS_ENTRY, g, s)["issues"]
-    assert empty == ["no requirement lines ('- **SSS-…** The system shall …') found"]
-
-
-def test_reviewing_a_software_specification_shows_its_parents(s):
-    g, _, _ = loaded(s)
+def test_the_review_lists_the_two_levels_apart(s):
+    g = Graph()
+    g.load(load_baseline(settings.baseline_yaml))
+    load_traceability(g, load_baseline(settings.baseline_yaml), settings.documents_dir)        # the graph BEFORE this document
     rev = review_document(SRS2, SRS2_ENTRY, g, s)
-    assert rev["requirement_level"] == "software"
+    assert rev["levels"] == {"system": 3, "software": 4}
     reqs = {r["id"]: r for r in rev["requirements"]}
-    assert [(p["id"], p["exists"], p["level"]) for p in reqs["SRS-BRK-061"]["traces_to"]] == [
-        ("SSS-LTV-011", True, "system"), ("SSS-LTV-021", True, "system")]
-    assert reqs["SRS-BRK-060"]["traces_to"][0]["text"].startswith("The vehicle shall prevent sustained lock-up")
-    assert reqs["SRS-BRK-063"]["traces_to"] == []
-    assert rev["issues"] == ["SRS-BRK-062: traces to SSS-LTV-099, which is not a requirement in the graph"]
-    mixed = review_document(SRS2 + "\n- **SSS-LTV-010** The vehicle shall prevent lock-up.\n", SRS2_ENTRY, g, s)["issues"]
-    assert any("SSS-LTV-010: a system requirement id in an SRS, which states software requirements." in i
-               and "Traces to: SSS-LTV-010" in i for i in mixed)
+    assert (reqs["SRS-BRK-051"]["level"], reqs["SRS-BRK-051"]["level_source"]) == ("system", "stated")
+    # a software requirement and the system requirement it derives from, in the same document
+    assert [(p["id"], p["exists"], p["level"]) for p in reqs["SRS-BRK-060"]["traces_to"]] == [("SRS-BRK-050", True, "system")]
+    assert reqs["SRS-BRK-060"]["traces_to"][0]["text"].startswith("The Brake Control ECU shall prevent sustained lock-up")
+    # which system requirements the software has picked up
+    assert reqs["SRS-BRK-050"]["traced_by"] == ["SRS-BRK-060"] and reqs["SRS-BRK-052"]["traced_by"] == ["SRS-BRK-061"]
+    assert reqs["SRS-BRK-051"]["traced_by"] == [] and "traced_by" not in reqs["SRS-BRK-060"]
+    assert sorted(rev["issues"]) == [
+        "SRS-BRK-062: traces to SRS-BRK-099, which is not a requirement in this document or the graph",
+        "SRS-BRK-063: neither a Level: nor the wording says whether this is a system or a software requirement "
+        "(who 'shall'?); taken as software. Add 'Level: system' or 'Level: software' to its attribute line"]
 
 
-def test_a_test_case_can_verify_either_level(s):
-    std = ("# STD-LTV-001 — Vehicle test description\n\n## TC-LTV-010 — Wheel lock-up on low friction\n"
-           "Verifies: SSS-LTV-010, SRS-BRK-060.\nMethod: Test.\nPass criteria: no wheel locks for more than 150 ms.\n")
-    (s.documents_dir / "STD-LTV-001.md").write_text(std)
-    entry = {"id": "STD-LTV-001", "name": "Vehicle test description", "type": "std", "revision": "A",
-             "attached_to": "SUB-BRK-ECU", "file": "STD-LTV-001.md"}
-    s.baseline_yaml.write_text(s.baseline_yaml.read_text() + baseline_line(entry) + "\n")
-    g, _, res = loaded(s)
-    assert res["unresolved"] == [] and res["verifies"] == 2
-    assert {e["to_eid"] for e in g.e.values() if e["type"] == "VERIFIES"} == {"SSS-LTV-010", "SRS-BRK-060"}
-
-
-def test_a_document_held_by_the_vehicle_covers_the_subsystems_under_it(s):
+def test_the_review_reports_a_level_it_cannot_use_and_a_trace_the_wrong_way(s):
     g, _, _ = loaded(s)
-    assert missing_documents(g, ["SUB-BRK-ECU", "SUB-DCL"], ["sss"]) == []            # the SSS is on V-001, above both
-    assert missing_documents(g, ["SUB-BRK-ECU"], ["ssdd"]) == [{"eid": "SUB-BRK-ECU", "doc_type": "ssdd"}]
-    assert {"eid": "SUB-ENG-ECM", "doc_type": "std"} in missing_documents(g, ["SUB-ENG-ECM"], ["std"])
-
-
-def test_the_sss_arrives_through_the_front_door(tmp_path):
-    got = receive(SSS, tmp_path / "incoming", replace(settings, diagrams="local", vision_model=""))
-    assert got["entry"] == SSS_ENTRY
+    text = SRS2.replace("  Level: system | Safety: SwCI 1 | Verification: T", "  Level: hardware | Verification: T | Traces to: SRS-BRK-060")
+    text = text.replace("- **SRS-BRK-051** Service braking shall", "- **SRS-BRK-051** The unit shall keep service braking; it shall")
+    issues = review_document(text, SRS2_ENTRY, g, s)["issues"]
+    assert "SRS-BRK-051: Level: 'hardware' is not 'system' or 'software'; classified as system from its wording" in issues
+    assert any(i.startswith("SRS-BRK-051: a system requirement traces to the software requirement SRS-BRK-060") for i in issues)
 
 
 def test_the_health_report_names_the_level_and_a_parent_nobody_states(s, onto):
     from esamkit.health import health_report
-
-    class G(Graph):
-        def message_origins(self, message):
-            return []
-
-        def untested_requirements(self):
-            tested = {e["to_eid"] for e in self.e.values() if e["type"] == "VERIFIES"}
-            return [{"eid": k, "name": v["props"]["name"], "level": v["props"]["level"], "subsystem": v["props"]["subsystem"],
-                     "document": v["props"]["source_artifact"]}
-                    for k, v in sorted(self.v.items()) if v["label"] == "Requirement" and k not in tested]
-
-    g, base = G(), load_baseline(s.baseline_yaml)
-    g.load(base)
-    load_traceability(g, base, s.documents_dir)
+    g, _, _ = loaded(s)
     data = yaml.safe_load(s.baseline_yaml.read_text())
     rep = health_report(g, onto, data, s.documents_dir, {a["id"]: 1 for a in data["artifacts"]})
-    trace = {f["where"]: f["message"] for f in next(c for c in rep["checks"] if c["id"] == 4)["findings"]
+    found = {f["where"]: f["message"] for f in next(c for c in rep["checks"] if c["id"] == 4)["findings"]
              if "no test case" in f["message"]}
-    assert trace["SSS-LTV-010"].startswith("system requirement: no test case verifies it (V-001, SSS-LTV-001)")
-    assert trace["SRS-BRK-060"].startswith("software requirement: no test case verifies it (SUB-BRK-ECU, SRS-BRK-002)")
+    assert found["SRS-BRK-050"].startswith("system requirement: no test case verifies it (SUB-BRK-ECU, SRS-BRK-002)")
+    assert found["SRS-BRK-060"].startswith("software requirement: no test case verifies it (SUB-BRK-ECU, SRS-BRK-002)")
     msgs = [f"{f['where']}: {f['message']}" for f in next(c for c in rep["checks"] if c["id"] == 4)["findings"]]
-    assert "SRS-BRK-062: traces to SSS-LTV-099, which no SSS defines" in msgs
+    assert "SRS-BRK-062: traces to SRS-BRK-099, which no SRS defines" in msgs
     assert not any("SSF-BRK-02" in m or "ICD-BRK-001" in m for m in msgs)      # not requirement ids: not this check's business
     assert not rep["blocked"]
+
+
+def test_a_test_case_can_verify_either_level(s):
+    std = ("# STD-BRK-002 — Brake test description, part 2\n\n## TC-BRK-050 — Wheel lock-up on low friction\n"
+           "Verifies: SRS-BRK-050, SRS-BRK-060.\nMethod: Test.\nPass criteria: no wheel locks for more than 150 ms.\n")
+    (s.documents_dir / "STD-BRK-002.md").write_text(std)
+    entry = {"id": "STD-BRK-002", "name": "Brake test description, part 2", "type": "std", "revision": "A",
+             "attached_to": "SUB-BRK-ECU", "file": "STD-BRK-002.md"}
+    s.baseline_yaml.write_text(s.baseline_yaml.read_text() + baseline_line(entry) + "\n")
+    g, _, res = loaded(s)
+    assert res["unresolved"] == [] and res["verifies"] == 2
+    cases = review_document(std, entry, g, s)["test_cases"]
+    assert [(c["id"], c["level"]) for c in cases[0]["verifies"]] == [("SRS-BRK-050", "system"), ("SRS-BRK-060", "software")]
+
+
+def test_a_document_held_by_the_vehicle_covers_the_subsystems_under_it(s):
+    ssdd = {"id": "SSDD-LTV-001", "name": "Vehicle design", "type": "ssdd", "revision": "A", "attached_to": "V-001", "file": "SSDD-LTV-001.md"}
+    s.baseline_yaml.write_text(s.baseline_yaml.read_text() + baseline_line(ssdd) + "\n")
+    g, _, _ = loaded(s)
+    assert missing_documents(g, ["SUB-BRK-ECU", "SUB-DCL"], ["ssdd"]) == []            # the SSDD is on V-001, above both
+    assert {"eid": "SUB-ENG-ECM", "doc_type": "std"} in missing_documents(g, ["SUB-ENG-ECM"], ["std"])

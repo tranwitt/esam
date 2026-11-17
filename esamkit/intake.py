@@ -41,8 +41,7 @@ from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
 from .ontology import Ontology, check_baseline, find_node, part_sets
 from .readers import PICTURES, convert
-from .traceability import (_ID, id_prefix, level_of_id, load_traceability, misplaced_requirements, read_requirements,
-                           read_test_cases, requirement_levels)
+from .traceability import _ID, LEVELS, load_traceability, read_requirements, read_test_cases
 from .vectorstores.base import VectorStore
 
 _TITLE = re.compile(r"^#\s+(?P<id>[A-Z]+-[A-Z0-9]+-\d{3})\s*[—–-]\s*(?P<name>.+?)\s*$")
@@ -50,6 +49,7 @@ _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
 
 
 _OWNER_COLUMNS = ("subsystem", "system", "vehicle", "attached to", "attached_to")
+_REQ_ID = re.compile(r"^SRS-[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
 ORIGINALS = "originals"       # data/documents/originals/: Word and picture files as they were delivered
 
 
@@ -227,46 +227,52 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         out["test_cases"] = cases
         out["still_untested"] = [r["eid"] for r in graph.untested_requirements()
                                  if r["subsystem"] == entry.get("attached_to") and r["eid"] not in covered]
-    elif dtype in (levels := requirement_levels()):
-        # A specification. Its requirements are SYSTEM requirements (an SSS) or SOFTWARE requirements (an SRS):
-        # the document type decides, and the ids must say the same.
-        level, prefix = levels[dtype], dtype.upper()
-        found = read_requirements(text, aid, entry.get("attached_to", ""), level, dtype, levels).vertices
+    elif dtype == "srs":
+        # Every requirement is a SYSTEM or a SOFTWARE requirement (traceability.classify): stated on its attribute
+        # line, else from the subject of its "shall", else assumed.
+        found = read_requirements(text, aid, entry.get("attached_to", "")).vertices
         others = {r for r, p in reqs.items() if p.get("source_artifact") != aid}
-        out["requirement_level"] = level
+        here = {v.eid: v.props for v in found}
+        level_of = lambda rid: (here.get(rid) or reqs.get(rid) or {}).get("level")            # noqa: E731
         out["requirements"] = []
         for v in found:
-            parents = [{"id": p, "exists": p in reqs, "level": reqs.get(p, {}).get("level"),
-                        "text": reqs.get(p, {}).get("text", "")}
-                       for ref in v.props.get("traces_to", []) for p in _ID.findall(ref) if level_of_id(p, levels)]
-            out["requirements"].append({"id": v.eid, "level": level, "text": v.props["text"], "section": v.props["section"],
-                                        "traces_to": parents})
-            for p in parents:
-                if not p["exists"]:
-                    out["issues"].append(f"{v.eid}: traces to {p['id']}, which is not a requirement in the graph")
-                elif level == "system" and p["level"] == "software":
-                    out["issues"].append(f"{v.eid}: a system requirement traces to the software requirement {p['id']}; "
+            p = v.props
+            parents = [{"id": r, "exists": r in here or r in reqs, "level": level_of(r),
+                        "text": (here.get(r) or reqs.get(r) or {}).get("text", "")}
+                       for ref in p.get("traces_to", []) for r in _ID.findall(ref) if _REQ_ID.match(r)]
+            out["requirements"].append({"id": v.eid, "level": p["level"], "level_source": p["level_source"],
+                                        "text": p["text"], "section": p["section"], "traces_to": parents})
+            if p.get("level_as_written"):
+                out["issues"].append(f"{v.eid}: Level: {p['level_as_written']!r} is not 'system' or 'software'; "
+                                     f"classified as {p['level']} from its wording")
+            elif p["level_source"] == "assumed" and " shall " in f" {p['text'].lower()} ":
+                out["issues"].append(f"{v.eid}: neither a Level: nor the wording says whether this is a system or a "
+                                     f"software requirement (who 'shall'?); taken as {p['level']}. Add 'Level: system' "
+                                     "or 'Level: software' to its attribute line")
+            for parent in parents:
+                if not parent["exists"]:
+                    out["issues"].append(f"{v.eid}: traces to {parent['id']}, which is not a requirement in this document or the graph")
+                elif p["level"] == "system" and parent["level"] == "software":
+                    out["issues"].append(f"{v.eid}: a system requirement traces to the software requirement {parent['id']}; "
                                          "the trace goes from software up to system")
+        out["levels"] = {lv: sum(r["level"] == lv for r in out["requirements"]) for lv in LEVELS}
+        # which system requirements a software requirement (here or already in the graph) traces to
+        children: dict[str, set[str]] = {}
+        for r in out["requirements"]:
+            for parent in r["traces_to"]:
+                children.setdefault(parent["id"], set()).add(r["id"])
+        for e in snap["edges"]:
+            if e["type"] == "TRACES_TO" and e["from_eid"] not in here:
+                children.setdefault(e["to_eid"], set()).add(e["from_eid"])
+        for r in out["requirements"]:
+            if r["level"] == "system":
+                r["traced_by"] = sorted(children.get(r["id"], ()))
         ids = [v.eid for v in found]
         out["issues"] += [f"{i}: requirement id used twice" for i in sorted({i for i in ids if ids.count(i) > 1})]
         out["issues"] += [f"{v.eid}: already specified in {reqs[v.eid]['source_artifact']}" for v in found if v.eid in others]
         out["issues"] += [f"{v.eid}: no 'shall'" for v in found if " shall " not in f" {v.props['text'].lower()} "]
-        out["issues"] += [f"{v.eid}: a {level} requirement in an {prefix} must have an id starting {prefix}-"
-                          for v in found if id_prefix(v.eid) != dtype]
-        out["issues"] += [f"{m['id']}: a {m['level']} requirement id in an {prefix}, which states {level} requirements. "
-                          f"It is not read as a requirement of this document: state it in the {m['belongs_in']} and refer "
-                          f"to it here with 'Traces to: {m['id']}'" for m in misplaced_requirements(text, dtype, levels)]
         if not found:
-            subject = "system" if level == "system" else "software"
-            out["issues"].append(f"no requirement lines ('- **{prefix}-…** The {subject} shall …') found")
-        if level == "system":
-            # which of this document's system requirements the software already traces to
-            children: dict[str, list[str]] = {}
-            for e in snap["edges"]:
-                if e["type"] == "TRACES_TO":
-                    children.setdefault(e["to_eid"], []).append(e["from_eid"])
-            for r in out["requirements"]:
-                r["traced_by"] = sorted(children.get(r["id"], []))
+            out["issues"].append("no requirement lines ('- **SRS-…** The software shall …') found")
     return out
 
 

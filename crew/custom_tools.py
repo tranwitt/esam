@@ -231,7 +231,7 @@ class CheckCoverageTool(WorkbenchTool):
 
 
 class RequirementInput(BaseModel):
-    requirement_id: str = Field(..., description="Requirement id: SRS-BRK-011 (software) or SSS-LTV-010 (system)")
+    requirement_id: str = Field(..., description="Requirement id, e.g. SRS-BRK-011")
 
 
 class VerifiedByTool(WorkbenchTool):
@@ -248,6 +248,7 @@ class VerifiedByTool(WorkbenchTool):
             return f"{requirement_id} is not a requirement in the graph."
         edges = [e for e in g.snapshot()["edges"] if e["type"] == "TRACES_TO"]
         return _dump({"requirement": requirement_id, "level": req["props"].get("level") or "software",
+                      "level_decided_by": req["props"].get("level_source"),
                       "text": req["props"].get("text"), "allocated_to": req["props"].get("subsystem"),
                       "document": req["props"].get("source_artifact"), "verified_by": g.verified_by(requirement_id),
                       # software -> system: the higher-level requirements it is derived from, and what derives from it
