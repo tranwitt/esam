@@ -45,7 +45,7 @@ DOC_TYPE_NAMES = {"std": "test description (STD)", "icd": "interface control doc
 
 
 # A requirement ID as the ontology defines it (classes.Requirement.id_pattern).
-_REQ_ID = re.compile(r"\b(?:SYS|SRS)-[A-Z0-9]+-0[1-9]\d\b")      # SYS-… system requirement, SRS-… software requirement
+_REQ_ID = re.compile(r"\bSRS-(?:(?:SYS|SW)-)?[A-Z0-9]+-0[1-9]\d\b")      # SRS-SYS-… system, SRS-SW-… / SRS-… software
 
 
 def message_in_question(question: str, messages: set[str]) -> str | None:

@@ -357,8 +357,8 @@ footer { color: var(--ink-2); font-size: 12px; }
       </div>
       <div class="panel">
         <h2>Requirement coverage</h2>
-        <p class="sub">Requirements are read from each SRS. Each is a system requirement (id <code>SYS-…</code>: what the subsystem as a
-          whole must do) or a software requirement (id <code>SRS-…</code>: what the software must do); the two are counted apart. Test cases are read
+        <p class="sub">Requirements are read from each SRS. Each is a system requirement (id <code>SRS-SYS-…</code>: what the subsystem as a
+          whole must do) or a software requirement (id <code>SRS-SW-…</code>, or the unmarked <code>SRS-…</code>: what the software must do); the two are counted apart. Test cases are read
           from each STD; a test case covers a requirement through its <em>Verifies:</em> line, and a requirement with no test case
           verifying it is untested. A software requirement points at the system requirement it derives from with its
           <em>Traces to:</em> line.</p>
@@ -479,7 +479,7 @@ const TYPES = {
   TestCase:       { code: "TC",  cls: "tc",  name: "Test case",      rank: 8, r: 5 },
 };
 // Every requirement read from an SRS is a system or a software requirement, and its id says which
-// (SYS-… / SRS-…): props.level; props.level_source says how it was decided.
+// (SRS-SYS-… / SRS-SW-…, plain SRS-… is software): props.level; props.level_source says how it was decided.
 const LEVELS = { system: { code: "SYS REQ", name: "System requirement" }, software: { code: "SW REQ", name: "Software requirement" } };
 const levelOf = (v) => (v && v.label === "Requirement" ? (v.props.level || "software") : null);
 const typeOf = (v) => {
@@ -1073,7 +1073,7 @@ function renderDetails() {
     const lv = levelOf(v), up = M.traces.filter((e) => e.from_eid === v.eid), down = M.traces.filter((e) => e.to_eid === v.eid);
     const reqItem = (id) => h("li", {}, nodeLink(id), " ", h("span.note", {}, M.byId.get(id)?.props.name || ""));
     parts.push(h("h4", {}, "Level"), h("p", {}, h("span.chip.t-req", {}, LEVELS[lv].code), " ", LEVELS[lv].name,
-      h("span.note", {}, " (" + ({ id: "its id says so: SYS-… system, SRS-… software", stated: "stated on its Level: line", wording: "from the subject of its \"shall\"", assumed: "assumed: neither stated nor clear from its wording" }[v.props.level_source] || "not recorded; reload the graph") + ")")));
+      h("span.note", {}, " (" + ({ id: "its id says so: SRS-SYS-… system, SRS-SW-… or SRS-… software", stated: "stated on its Level: line", wording: "from the subject of its \"shall\"", assumed: "assumed: neither stated nor clear from its wording" }[v.props.level_source] || "not recorded; reload the graph") + ")")));
     if (up.length) parts.push(h("h4", {}, "Traces to"), h("ul", {}, up.map((e) => reqItem(e.to_eid))));
     else if (lv === "software" && [...M.byId.values()].some((x) => levelOf(x) === "system"))
       parts.push(h("h4", {}, "Traces to"), h("p", {}, h("span.note", {}, "no system requirement")));

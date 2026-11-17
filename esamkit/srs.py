@@ -30,6 +30,7 @@ from pathlib import Path
 
 import yaml
 
+from .traceability import id_parts
 from .config import PROJECT_ROOT, Settings, settings as default_settings
 from .graphstores.base import GraphStore
 from .intake import ontology_check, read_header
@@ -204,7 +205,7 @@ def check_srs(text: str, brief: dict, assessment: dict, graph: GraphStore, lib: 
     methods, swcis = onto.allowed("verification_method"), onto.allowed("software_criticality")
     for v in reqs:
         p, rid, low = v.props, v.eid, f" {v.props['text'].lower()} "
-        if not re.match(pattern, rid) or not rid.startswith(prefix):
+        if not re.match(pattern, rid) or not id_parts(rid)[1].startswith(prefix):      # the level marker (SRS-SYS-…) aside
             F.append(_f("error", "requirement id", rid, f"renumber it {prefix}010 to {prefix}099 (001-009 are document numbers: "
                         f"{doc['id']} is this document); the form is {pattern}", "ontology Requirement.id_pattern"))
         if ids.count(rid) > 1:

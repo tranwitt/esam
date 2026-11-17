@@ -50,7 +50,7 @@ _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
 
 
 _OWNER_COLUMNS = ("subsystem", "system", "vehicle", "attached to", "attached_to")
-_REQ_ID = re.compile(r"^(SYS|SRS)-[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
+_REQ_ID = re.compile(r"^SRS-((SYS|SW)-)?[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
 ORIGINALS = "originals"       # data/documents/originals/: Word and picture files as they were delivered
 
 
@@ -229,10 +229,10 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         out["still_untested"] = [r["eid"] for r in graph.untested_requirements()
                                  if r["subsystem"] == entry.get("attached_to") and r["eid"] not in covered]
     elif dtype == "srs":
-        # Every requirement is a SYSTEM or a SOFTWARE requirement and its id says which (SYS-… / SRS-…). Its
-        # `Level:` line and its wording are the cross-check (traceability.classify).
+        # Every requirement is a SYSTEM or a SOFTWARE requirement and its id says which (SRS-SYS-… / SRS-SW-…;
+        # plain SRS-… is software). Its `Level:` line and its wording are the cross-check (traceability.classify).
         rules = classification_rules()
-        prefixes = rules["id_prefix"]
+        markers = rules["id_marker"]
         found = read_requirements(text, aid, entry.get("attached_to", "")).vertices
         others = {r for r, p in reqs.items() if p.get("source_artifact") != aid}
         here = {v.eid: v.props for v in found}
@@ -254,8 +254,9 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
                                      f"{p['level_expected']} requirement, number it {id_for(v.eid, p['level_expected'], rules)}")
             if p["level_source"] != "id":
                 out["issues"].append(f"{v.eid}: the id does not say whether this is a system or a software requirement: "
-                                     f"start it {prefixes.get('system', 'SYS')}- (system) or {prefixes.get('software', 'SRS')}- "
-                                     f"(software). Taken as {p['level']} ({p['level_source']})")
+                                     f"use SRS-{markers.get('system', 'SYS')}-<code>-0NN (system) or "
+                                     f"SRS-{markers.get('software', 'SW')}-<code>-0NN (software). "
+                                     f"Taken as {p['level']} ({p['level_source']})")
             for parent in parents:
                 if not parent["exists"]:
                     out["issues"].append(f"{v.eid}: traces to {parent['id']}, which is not a requirement in this document or the graph")
@@ -279,8 +280,8 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         out["issues"] += [f"{v.eid}: already specified in {reqs[v.eid]['source_artifact']}" for v in found if v.eid in others]
         out["issues"] += [f"{v.eid}: no 'shall'" for v in found if " shall " not in f" {v.props['text'].lower()} "]
         if not found:
-            out["issues"].append("no requirement lines ('- **SRS-…** The software shall …' or "
-                                 "'- **SYS-…** The <unit> shall …') found")
+            out["issues"].append("no requirement lines ('- **SRS-SW-…** The software shall …' or "
+                                 "'- **SRS-SYS-…** The <unit> shall …') found")
     return out
 
 

@@ -183,34 +183,35 @@ split over several SRS parts all land on the subsystem. The required-documents r
 the type; an incomplete set shows as a warning in health check 5 and beside the document in the Cockpit.
 Documents without `part` (two ICDs for one ECU) are simply two documents.
 
-**System requirements and software requirements.** Both are written in the SRS, and the **id** says which a
-requirement is:
+**System requirements and software requirements.** Both are written in the SRS, and a marker after `SRS-` in the
+**id** says which a requirement is:
 
 | Id | It is | Meaning |
 |---|---|---|
-| `SYS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
-| `SRS-BRK-060` | a **software** requirement | what the software itself must do |
+| `SRS-SYS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
+| `SRS-SW-BRK-060` | a **software** requirement | what the software itself must do |
+| `SRS-BRK-011` | a **software** requirement | the unmarked form used before the two were told apart; still read |
 
 ```
-- **SYS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
+- **SRS-SYS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
   Safety: SwCI 1 | Verification: T, A
 
-- **SRS-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
-  Timing: 20 ms max | Verification: T | Traces to: SYS-BRK-050
+- **SRS-SW-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
+  Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-050
 ```
 
 Each requirement in the graph carries `level` (and `level_source: id`). `Traces to:` from a software requirement
 to a system requirement becomes a `TRACES_TO` link. The review of an SRS lists the two levels apart with counts,
 shows each parent's text, and says which system requirements no software requirement traces to. The health
-report, `verified_by`, `graph reload` and the Cockpit's requirement coverage show the two apart as well.
+report, `verified_by`, `graph reload` and the Cockpit's requirement coverage show the two apart as well. Test
+cases cite either kind on their `Verifies:` line.
 
 So that a requirement numbered as the wrong kind is noticed, the review cross-checks every id against the
 requirement itself and gives the id it should have: an optional `Level: system` / `Level: software` on its
 attribute line, and the subject of its "shall" ("… the software shall" reads as software, "The Brake Control ECU
-shall" as system; a software word wins). An id with neither prefix is reported and classified by that same check.
-The prefixes and the word lists are in the ontology (`requirement_classification` in
-`data/ontology/esam_ontology.yaml`). A system requirement id has three parts (`SYS-BRK-050`); a System in the
-baseline has two (`SYS-SUSP`).
+shall" as system; a software word wins). An id that is not an `SRS-` id is reported and classified by that same
+check. The markers and the word lists are in the ontology (`requirement_classification` in
+`data/ontology/esam_ontology.yaml`).
 
 **System-level documents (SSDD).** Every document type is attached to a subsystem except the SSDD, which the
 ontology lets sit on the vehicle system, one system or a subsystem (`document_types.ssdd.attaches_to:

@@ -48,12 +48,12 @@ a2_document_review:
     and quote both sides. Note test cases whose cited requirement is already
     verified elsewhere, and the subsystem's requirements that remain untested
     after this document. For an SRS, every requirement is a system
-    requirement (id SYS-..., what the subsystem as a whole must do) or a
-    software requirement (id SRS-..., what the software must do); the id
-    decides. Report the two as separate lists with their counts (levels).
+    requirement (id SRS-SYS-..., what the subsystem as a whole must do) or a
+    software requirement (id SRS-SW-..., or an unmarked SRS-...: what the
+    software must do); the id decides. Report the two as separate lists with their counts (levels).
     Report every issue where an id disagrees with the requirement's Level:
     line or its wording, giving the id it should have, and every id that
-    has neither prefix. Say which system requirement each software
+    is not an SRS- id. Say which system requirement each software
     requirement traces to (traces_to), and which system requirements no
     software requirement traces to (traced_by empty). Check every requirement is a single,
     testable 'shall' with a measurable value, and flag any that is not. Use

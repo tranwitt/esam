@@ -19,7 +19,7 @@ deterministic checks as a markdown one.
 import re
 from dataclasses import dataclass, field
 
-DOC_ID = r"[A-Z]+-[A-Z0-9]+-\d{3}"
+DOC_ID = r"[A-Z]+(?:-[A-Z0-9]+)+?-\d{3}"      # SRS-BRK-001, TC-BRK-011, and four-part requirement ids: SRS-SYS-BRK-050
 _TITLE = re.compile(rf"^{DOC_ID}\s*[—–-]\s*\S")
 # A paragraph that opens with a bold id is a requirement line, bulleted or not.
 _LEADING_ID = re.compile(rf"^\*\*(?P<id>{DOC_ID})[:.]?\*\*[\s:.]*(?P<rest>\S.*)$", re.S)

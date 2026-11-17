@@ -79,11 +79,13 @@ class Ontology:
 
     def requirement_classification(self) -> dict:
         """How an SRS requirement is told to be a system or a software
-        requirement: {"id_prefix": {level: prefix}, "default": level,
-        "subjects": {level: [words]}}. The id prefix decides; the rest is the
-        cross-check (and the fallback for an id with neither prefix)."""
+        requirement: {"id_marker": {level: marker}, "unmarked": level,
+        "default": level, "subjects": {level: [words]}}. The marker in the id
+        decides (SRS-SYS-…, SRS-SW-…; `unmarked` for plain SRS-…); the rest is
+        the cross-check (and the fallback for an id that is not an SRS- id)."""
         rc = self.data.get("requirement_classification") or {}
-        return {"id_prefix": {k: str(v).upper() for k, v in (rc.get("id_prefix") or {}).items()},
+        return {"id_marker": {k: str(v).upper() for k, v in (rc.get("id_marker") or {}).items()},
+                "unmarked": rc.get("unmarked") or "software",
                 "default": rc.get("default") or "software",
                 "subjects": {k: [str(w).lower() for w in v or []] for k, v in (rc.get("subjects") or {}).items()}}
 
@@ -122,20 +124,21 @@ class Ontology:
             for pname, spec in (r.get("properties") or {}).items():
                 check_attr(f"relationship {rname}.{pname}", spec)
         levels, rc = set(self.value_sets.get("requirement_level") or {}), self.requirement_classification()
-        for level in dict.fromkeys([rc["default"], *rc["subjects"], *rc["id_prefix"]]):
+        for level in dict.fromkeys([rc["default"], rc["unmarked"], *rc["subjects"], *rc["id_marker"]]):
             if levels and level not in levels:
                 out.append(Finding("error", "requirement_classification",
                                    f"{level!r} is not in value_sets.requirement_level ({', '.join(sorted(levels))})"))
         pattern = self.classes.get("Requirement", {}).get("id_pattern")
         for level in sorted(levels):
-            prefix = rc["id_prefix"].get(level)
-            if not prefix:
-                out.append(Finding("error", "requirement_classification", f"id_prefix has no prefix for {level} requirements"))
-            elif pattern and not re.match(pattern, f"{prefix}-X-010"):
+            marker = rc["id_marker"].get(level)
+            if not marker:
+                out.append(Finding("error", "requirement_classification", f"id_marker has no marker for {level} requirements"))
+            elif pattern and not re.match(pattern, f"SRS-{marker}-X-010"):
                 out.append(Finding("error", "requirement_classification",
-                                   f"id_prefix.{level} = {prefix!r} does not fit classes.Requirement.id_pattern"))
-        if len(set(rc["id_prefix"].values())) < len(rc["id_prefix"]):
-            out.append(Finding("error", "requirement_classification", "two levels share one id prefix"))
+                                   f"id_marker.{level} = {marker!r} does not fit classes.Requirement.id_pattern "
+                                   f"(SRS-{marker}-X-010 must match it)"))
+        if len(set(rc["id_marker"].values())) < len(rc["id_marker"]):
+            out.append(Finding("error", "requirement_classification", "two levels share one id marker"))
         owners = self.relationships.get("HAS_ARTIFACT", {}).get("from", [])
         for tname in self.document_types:
             for cname in self.attach_classes(tname):
