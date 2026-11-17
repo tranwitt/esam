@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.9"
+  version: "0.10"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -151,13 +151,13 @@ classes:
   # not written in the baseline: esamkit/traceability.py. Each records the
   # document it came from, so a new revision replaces what the old one gave.
   Requirement:
-    description: "One 'shall' statement in an SRS. Its id says whether it is a system requirement ('- **SRS-SYS-…**') or a software requirement ('- **SRS-SW-…**', or the unmarked '- **SRS-…**')."
-    id_pattern: '^SRS-((SYS|SW)-)?[A-Z0-9]+-0[1-9]\d$'
+    description: "One 'shall' statement in an SRS. Its id says whether it is a system requirement ('- **SYS-SRS-…**') or a software requirement ('- **SW-SRS-…**', or the unmarked '- **SRS-…**')."
+    id_pattern: '^((SYS|SW)-)?SRS-[A-Z0-9]+-0[1-9]\d$'
     source: document
     attributes:
       text: { type: text, required: true }
       # system | software, and how that was decided (see requirement_classification):
-      #   id       from its id: SRS-SYS-… is a system requirement, SRS-SW-… (or plain SRS-…) a software requirement
+      #   id       from its id: SYS-SRS-… is a system requirement, SW-SRS-… (or plain SRS-…) a software requirement
       #   stated / wording / assumed   only for an id that is not an SRS- id (which the review reports)
       level: { type: enum, values: requirement_level, required: true }
       level_source: { type: text, description: "id | stated | wording | assumed" }
@@ -271,12 +271,12 @@ placement:
     level: { values: requirement_level, description: "Optional. Level: system or software; must agree with the requirement's id" }
 
 # ── System requirement or software requirement? ──────────────────────────────
-# The ID says it. Both kinds are written in the SRS, and a marker after
-# "SRS-" tells them apart:
+# The ID says it. Both kinds are written in the SRS, and a marker in front
+# of "SRS-" tells them apart:
 #
-#     - **SRS-SYS-BRK-050** The Brake Control ECU shall prevent wheel lock-up ...   system
-#     - **SRS-SW-BRK-060** The software shall command pressure release ...         software
-#       Verification: T | Traces to: SRS-SYS-BRK-050
+#     - **SYS-SRS-BRK-050** The Brake Control ECU shall prevent wheel lock-up ...   system
+#     - **SW-SRS-BRK-060** The software shall command pressure release ...         software
+#       Verification: T | Traces to: SYS-SRS-BRK-050
 #
 # `id_marker` is that marker for each level. An id with no marker
 # (SRS-BRK-011, the form used before the two were told apart) is `unmarked`.

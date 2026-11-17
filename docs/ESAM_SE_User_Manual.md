@@ -527,13 +527,13 @@ Today a requirement reads:
 A person can see it's safety-related and has a 20 ms deadline. ESAM can't do so reliably. Written for ESAM:
 
 > **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
-> Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-041 | Basis: MIL-STD-882E 4.4.2
+> Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 
 In the markdown file, the attribute line sits directly under the requirement, indented two spaces:
 
 ```
 - **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
-  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-041 | Basis: MIL-STD-882E 4.4.2
+  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 ```
 
 | Field | What goes in it | Checked against |
@@ -581,7 +581,7 @@ Until now the graph knew about **documents**: the Brake ECU has an SRS. It now a
 
 | Item | Read from | Linked to |
 |---|---|---|
-| **Requirement** | Each requirement line in an SRS. Its id says what it is: `SRS-SYS-…` a **system** requirement, `SRS-SW-…` (or the unmarked `SRS-…`) a **software** requirement; the two are counted and shown apart, and an id that disagrees with the wording is reported (§9.4) | *specified in* its SRS; *allocated to* the SRS's subsystem; a software requirement **traces to** each system requirement on its `Traces to:` line |
+| **Requirement** | Each requirement line in an SRS. Its id says what it is: `SYS-SRS-…` a **system** requirement, `SW-SRS-…` (or the unmarked `SRS-…`) a **software** requirement; the two are counted and shown apart, and an id that disagrees with the wording is reported (§9.4) | *specified in* its SRS; *allocated to* the SRS's subsystem; a software requirement **traces to** each system requirement on its `Traces to:` line |
 | **Test case** | Each `TC-…` heading in an STD, with its fixed fields (§9.5) | *specified in* its STD; **verifies** each requirement on its `Verifies:` line |
 
 Nothing is guessed. ESAM reads the formats this manual asks you to write, and every item remembers which document it came from. When a new revision of a document is loaded, everything the old revision contributed is replaced, so a deleted requirement or test case doesn't linger.

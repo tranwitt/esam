@@ -81,7 +81,7 @@ class Ontology:
         """How an SRS requirement is told to be a system or a software
         requirement: {"id_marker": {level: marker}, "unmarked": level,
         "default": level, "subjects": {level: [words]}}. The marker in the id
-        decides (SRS-SYS-…, SRS-SW-…; `unmarked` for plain SRS-…); the rest is
+        decides (SYS-SRS-…, SW-SRS-…; `unmarked` for plain SRS-…); the rest is
         the cross-check (and the fallback for an id that is not an SRS- id)."""
         rc = self.data.get("requirement_classification") or {}
         return {"id_marker": {k: str(v).upper() for k, v in (rc.get("id_marker") or {}).items()},
@@ -133,10 +133,10 @@ class Ontology:
             marker = rc["id_marker"].get(level)
             if not marker:
                 out.append(Finding("error", "requirement_classification", f"id_marker has no marker for {level} requirements"))
-            elif pattern and not re.match(pattern, f"SRS-{marker}-X-010"):
+            elif pattern and not re.match(pattern, f"{marker}-SRS-X-010"):
                 out.append(Finding("error", "requirement_classification",
                                    f"id_marker.{level} = {marker!r} does not fit classes.Requirement.id_pattern "
-                                   f"(SRS-{marker}-X-010 must match it)"))
+                                   f"({marker}-SRS-X-010 must match it)"))
         if len(set(rc["id_marker"].values())) < len(rc["id_marker"]):
             out.append(Finding("error", "requirement_classification", "two levels share one id marker"))
         owners = self.relationships.get("HAS_ARTIFACT", {}).get("from", [])

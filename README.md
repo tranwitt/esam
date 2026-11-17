@@ -22,7 +22,7 @@ The lessons grew into a working system an SE can use (learning build, synthetic 
 |---|---|---|
 | **SE baseline + ontology** | The vehicle structure in YAML, checked against the programme vocabulary (MIL-STD-498 document names, MIL-STD-882E criticality, rules for which documents each subsystem needs) | SE manual §1, §8 |
 | **Hybrid answers** | Questions answered from the documents *and* the graph, with **MISSING** when a needed document or test doesn't exist | §7, `docs/how_esam_finds_answers.html` |
-| **Traceability + health report** | Requirements read from each SRS, where the id says system (`SRS-SYS-…`) or software (`SRS-SW-…`, or the unmarked `SRS-…`), and test cases, all read from the documents; six checks on the baseline, only integrity blocks | §5, §10 |
+| **Traceability + health report** | Requirements read from each SRS, where the id says system (`SYS-SRS-…`) or software (`SW-SRS-…`, or the unmarked `SRS-…`), and test cases, all read from the documents; six checks on the baseline, only integrity blocks | §5, §10 |
 | **SE Cockpit** | Dashboard, Graph, Ontology and Tasks tabs (`uvicorn cockpit.app:app --port 8080`) | `cockpit/README.md` |
 | **The agents (CrewAI)** | Review a document → **SE approves** → ingest + verify; ask questions; draft an SRS from an SE brief with an evidence pack; a task list and worker; full run logs | §11, §12, `crew/README.md` |
 | **Standards library** | MIL-STD-882E (extract) and the SRS DID (DI-IPSC-81433A), cited only by real clause | §11.4 |

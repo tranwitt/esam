@@ -52,8 +52,8 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   (`ESAM_EMBED_CLIENT=auto|sdk|http`). `ESAM_EMBED_BASE_URL` is a base URL again (`…/v1` → `…/v1/embeddings`); a value
   already ending in `/embeddings` is accepted. The SDK path is tested with a stand-in module only: the session that
   wrote it had no `openai` package. Run `python -m esamkit.environment` against the real endpoint.
-- **System vs software requirements** (ontology v0.9, no SSS type): both are written in the SRS and a marker in
-  the id says which: `SRS-SYS-<code>-0NN` system, `SRS-SW-<code>-0NN` software, unmarked `SRS-<code>-0NN` software
+- **System vs software requirements** (ontology v0.10, no SSS type): both are written in the SRS and a marker in
+  the id says which: `SYS-SRS-<code>-0NN` system, `SW-SRS-<code>-0NN` software, unmarked `SRS-<code>-0NN` software
   (`requirement_classification.id_marker` / `unmarked`). Ids may therefore have four parts: the shared id form is
   `traceability.ID_FORM` (also `docmodel.DOC_ID`). Every Requirement has `level` and `level_source` (`id`). A
   `Level:` line or wording (subject of the shall) that disagrees with the id is a review issue naming the id it

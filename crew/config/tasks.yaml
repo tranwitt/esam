@@ -48,8 +48,8 @@ a2_document_review:
     and quote both sides. Note test cases whose cited requirement is already
     verified elsewhere, and the subsystem's requirements that remain untested
     after this document. For an SRS, every requirement is a system
-    requirement (id SRS-SYS-..., what the subsystem as a whole must do) or a
-    software requirement (id SRS-SW-..., or an unmarked SRS-...: what the
+    requirement (id SYS-SRS-..., what the subsystem as a whole must do) or a
+    software requirement (id SW-SRS-..., or an unmarked SRS-...: what the
     software must do); the id decides. Report the two as separate lists with their counts (levels).
     Report every issue where an id disagrees with the requirement's Level:
     line or its wording, giving the id it should have, and every id that

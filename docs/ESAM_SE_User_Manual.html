@@ -1381,11 +1381,11 @@ SELECT depth, id, name, wbs FROM up;
 </blockquote>
 <p>A person can see it's safety-related and has a 20 ms deadline. ESAM can't do so reliably. Written for ESAM:</p>
 <blockquote class="callout quote">
-<p><strong>SRS-BRK-021</strong> On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.<br>Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-041 | Basis: MIL-STD-882E 4.4.2</p>
+<p><strong>SRS-BRK-021</strong> On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.<br>Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2</p>
 </blockquote>
 <p>In the markdown file, the attribute line sits directly under the requirement, indented two spaces:</p>
 <div class="code"><div class="code-bar"><span>text</span><button class="copy" type="button">Copy</button></div><pre><code>- **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic unit to conventional braking within 20 ms.
-  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-041 | Basis: MIL-STD-882E 4.4.2
+  Safety: SwCI 1 | Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-041 | Basis: MIL-STD-882E 4.4.2
 </code></pre></div>
 <div class="tbl cols-3"><table>
 <thead>
@@ -1488,7 +1488,7 @@ Pass criteria: …
 <tbody>
 <tr>
 <td data-label="Item"><strong>Requirement</strong></td>
-<td data-label="Read from">Each requirement line in an SRS. Its id says what it is: <code>SRS-SYS-…</code> a <strong>system</strong> requirement, <code>SRS-SW-…</code> (or the unmarked <code>SRS-…</code>) a <strong>software</strong> requirement; the two are counted and shown apart, and an id that disagrees with the wording is reported (<a class="xref" href="#94-in-an-srs-an-attribute-line-under-each-requirement" data-tip="§9.4 In an SRS: an attribute line under each requirement">§9.4</a>)</td>
+<td data-label="Read from">Each requirement line in an SRS. Its id says what it is: <code>SYS-SRS-…</code> a <strong>system</strong> requirement, <code>SW-SRS-…</code> (or the unmarked <code>SRS-…</code>) a <strong>software</strong> requirement; the two are counted and shown apart, and an id that disagrees with the wording is reported (<a class="xref" href="#94-in-an-srs-an-attribute-line-under-each-requirement" data-tip="§9.4 In an SRS: an attribute line under each requirement">§9.4</a>)</td>
 <td data-label="Linked to"><em>specified in</em> its SRS; <em>allocated to</em> the SRS's subsystem; a software requirement <strong>traces to</strong> each system requirement on its <code>Traces to:</code> line</td>
 </tr>
 <tr>

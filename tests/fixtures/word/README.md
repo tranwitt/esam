@@ -6,7 +6,7 @@ All content is the synthetic SYNTH-LTV programme; nothing here is real programme
 | File | Made from | Shows |
 |---|---|---|
 | `STD-BRK-001.docx`, `STD-BRK-001.doc` | `lessons/06_missing_document/staged/STD-BRK-001.md` | a test description: header table, test cases with `Verifies:` lines |
-| `SRS-BRK-001.doc` | `data/documents/SRS-BRK-001.md` | requirements as bulleted bold ids, with continuation lines and `Traces to:` attribute lines; system (`SRS-SYS-…`) and software requirements |
+| `SRS-BRK-001.doc` | `data/documents/SRS-BRK-001.md` | requirements as bulleted bold ids, with continuation lines and `Traces to:` attribute lines; system (`SYS-SRS-…`) and software requirements |
 | `SRS-PWR-001.docx`, `SRS-PWR-001.doc` | written with python-docx | Title style, header table, bold-id bullets, an attribute line, an embedded PNG with a Caption, a numbered list |
 | `ICD-PWR-001.doc` | an HTML page | a hyperlink field, a nested table, a cell with two paragraphs, an empty cell, nested lists, three heading levels |
 | `ICD-PWR-002.doc` | written with python-docx | an embedded JPEG and PNG, text outside the Basic Multilingual Plane |

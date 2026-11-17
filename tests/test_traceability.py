@@ -15,14 +15,14 @@ def test_requirements_read_from_srs():
     ids = [v.eid for v in ex.vertices]
     assert ids == ["SRS-BRK-010", "SRS-BRK-011", "SRS-BRK-012", "SRS-BRK-020", "SRS-BRK-021",
                    "SRS-BRK-022", "SRS-BRK-030", "SRS-BRK-031", "SRS-BRK-032",
-                   "SRS-SYS-BRK-040", "SRS-SYS-BRK-041", "SRS-SYS-BRK-042", "SRS-SYS-BRK-043"]
+                   "SYS-SRS-BRK-040", "SYS-SRS-BRK-041", "SYS-SRS-BRK-042", "SYS-SRS-BRK-043"]
     assert [v.props["level"] for v in ex.vertices] == ["software"] * 9 + ["system"] * 4
     r011 = ex.vertices[1].props
     assert r011["text"].startswith("The software shall release brake pressure") and "lock-up on that wheel." in r011["text"]
     assert r011["section"] == "1. Control requirements" and r011["subsystem"] == "SUB-BRK-ECU"
     assert {(e.type, e.to_eid) for e in ex.edges if e.from_eid == "SRS-BRK-011"} == {
-        ("SPECIFIED_IN", "SRS-BRK-001"), ("ALLOCATED_TO", "SUB-BRK-ECU"), ("TRACES_TO", "SRS-SYS-BRK-040")}
-    assert r011["traces_to"] == ["SRS-SYS-BRK-040"] and "Traces to" not in r011["text"]
+        ("SPECIFIED_IN", "SRS-BRK-001"), ("ALLOCATED_TO", "SUB-BRK-ECU"), ("TRACES_TO", "SYS-SRS-BRK-040")}
+    assert r011["traces_to"] == ["SYS-SRS-BRK-040"] and "Traces to" not in r011["text"]
 
 
 def test_test_cases_read_from_std():

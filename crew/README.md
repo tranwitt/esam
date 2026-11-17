@@ -183,26 +183,26 @@ split over several SRS parts all land on the subsystem. The required-documents r
 the type; an incomplete set shows as a warning in health check 5 and beside the document in the Cockpit.
 Documents without `part` (two ICDs for one ECU) are simply two documents.
 
-**System requirements and software requirements.** Both are written in the SRS, and a marker after `SRS-` in the
+**System requirements and software requirements.** Both are written in the SRS, and a marker in front of `SRS-` in the
 **id** says which a requirement is:
 
 | Id | It is | Meaning |
 |---|---|---|
-| `SRS-SYS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
-| `SRS-SW-BRK-060` | a **software** requirement | what the software itself must do |
+| `SYS-SRS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
+| `SW-SRS-BRK-060` | a **software** requirement | what the software itself must do |
 | `SRS-BRK-011` | a **software** requirement | the unmarked form used before the two were told apart; still read |
 
 ```
-- **SRS-SYS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
+- **SYS-SRS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
   Safety: SwCI 1 | Verification: T, A
 
-- **SRS-SW-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
-  Timing: 20 ms max | Verification: T | Traces to: SRS-SYS-BRK-050
+- **SW-SRS-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
+  Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-050
 ```
 
 The two example specifications show both kinds: `data/documents/SRS-BRK-001.md` and `SRS-DCL-001.md` each end with
-a *System requirements* section (`SRS-SYS-BRK-040` … `043`, `SRS-SYS-DCL-040`, `041`), and their software
-requirements trace to them. `SRS-SYS-BRK-043` is deliberately traced to by nothing, so the flow-down gap shows.
+a *System requirements* section (`SYS-SRS-BRK-040` … `043`, `SYS-SRS-DCL-040`, `041`), and their software
+requirements trace to them. `SYS-SRS-BRK-043` is deliberately traced to by nothing, so the flow-down gap shows.
 
 Each requirement in the graph carries `level` (and `level_source: id`). `Traces to:` from a software requirement
 to a system requirement becomes a `TRACES_TO` link. The review of an SRS lists the two levels apart with counts,

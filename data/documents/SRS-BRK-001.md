@@ -6,10 +6,10 @@
 
 - **SRS-BRK-010** The software shall execute the wheel-slip control loop every 5 ms with jitter
   not exceeding 0.5 ms.
-  Traces to: SRS-SYS-BRK-040
+  Traces to: SYS-SRS-BRK-040
 - **SRS-BRK-011** The software shall release brake pressure on a wheel within 15 ms of
   detecting incipient lock-up on that wheel.
-  Traces to: SRS-SYS-BRK-040
+  Traces to: SYS-SRS-BRK-040
 - **SRS-BRK-012** The software shall support a crew-selectable off-road ABS mode that permits
   limited wheel lock to build a soil wedge on loose terrain.
 
@@ -19,35 +19,35 @@
   shall be developed to the corresponding level of rigor.
 - **SRS-BRK-021** On detection of an internal fault, the software shall revert the hydraulic
   unit to conventional braking within 20 ms.
-  Traces to: SRS-SYS-BRK-041
+  Traces to: SYS-SRS-BRK-041
 - **SRS-BRK-022** The software shall not allocate memory dynamically after initialisation.
 
 ## 3. Interface requirements
 
 - **SRS-BRK-030** The software shall transmit EBC1 (PGN 61441) every 100 ms ± 10 ms as defined
   in ICD-BRK-001.
-  Traces to: SRS-SYS-BRK-042
+  Traces to: SYS-SRS-BRK-042
 - **SRS-BRK-031** The software shall set the amber warning lamp request in EBC1 whenever
   anti-lock modulation is unavailable.
-  Traces to: SRS-SYS-BRK-042
+  Traces to: SYS-SRS-BRK-042
 - **SRS-BRK-032** The software shall transmit DM1 within 1 s of any new active fault.
-  Traces to: SRS-SYS-BRK-042
+  Traces to: SYS-SRS-BRK-042
 
 ## 4. System requirements
 
 These are what the Brake Control ECU as a whole must do, whatever mix of hardware and software
-does it. Their ids carry the marker `SYS` (`SRS-SYS-BRK-…`). The software requirements in
+does it. Their ids start with `SYS-` (`SYS-SRS-BRK-…`). The software requirements in
 sections 1 to 3 name the system requirement they derive from on a `Traces to:` line.
 
-- **SRS-SYS-BRK-040** The Brake Control ECU shall prevent sustained lock-up of any braked wheel
+- **SYS-SRS-BRK-040** The Brake Control ECU shall prevent sustained lock-up of any braked wheel
   during service braking at speeds above 8 km/h.
   Safety: SwCI 1 | Verification: T, A
-- **SRS-SYS-BRK-041** The Brake Control ECU shall revert to conventional braking when it can no
+- **SYS-SRS-BRK-041** The Brake Control ECU shall revert to conventional braking when it can no
   longer modulate brake pressure.
   Safety: SwCI 1 | Verification: T
-- **SRS-SYS-BRK-042** The Brake Control ECU shall report its anti-lock state and its faults to
+- **SYS-SRS-BRK-042** The Brake Control ECU shall report its anti-lock state and its faults to
   the vehicle over the J1939 backbone.
   Verification: T
-- **SRS-SYS-BRK-043** The Brake Control ECU shall complete its power-up self-test within 500 ms
+- **SYS-SRS-BRK-043** The Brake Control ECU shall complete its power-up self-test within 500 ms
   of ignition on.
   Timing: 500 ms max | Verification: T

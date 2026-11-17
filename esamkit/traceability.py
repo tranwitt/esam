@@ -16,8 +16,8 @@ must do, whatever mix of hardware and software does it) or a SOFTWARE
 requirement (what the software itself must do). Both are written in the SRS
 and the ID says which (the ontology's `requirement_classification`):
 
-    SRS-SYS-BRK-050   system requirement
-    SRS-SW-BRK-060    software requirement   (plain SRS-BRK-011, the earlier form, is software too)
+    SYS-SRS-BRK-050   system requirement
+    SW-SRS-BRK-060    software requirement   (plain SRS-BRK-011, the earlier form, is software too)
 
 Each carries `level` and `level_source` ("id"). The wording is only a
 cross-check: a `Level:` on the attribute line, or the subject of the
@@ -37,12 +37,12 @@ contributed: a deleted requirement doesn't linger.
 
 The formats it reads are the ones the manual asks SEs to write:
 
-    - **SRS-SYS-BRK-050** The Brake Control ECU shall prevent wheel lock-up ...
+    - **SYS-SRS-BRK-050** The Brake Control ECU shall prevent wheel lock-up ...
       Verification: T
 
-    - **SRS-SW-BRK-060** The software shall release brake pressure ...
+    - **SW-SRS-BRK-060** The software shall release brake pressure ...
       (continuation lines indented)
-      Verification: T | Traces to: SRS-SYS-BRK-050
+      Verification: T | Traces to: SYS-SRS-BRK-050
 
     ## TC-BRK-011 — Pressure release time on incipient wheel lock-up
     Verifies: SRS-BRK-011.
@@ -57,7 +57,7 @@ from .baseline import Baseline, Edge, Vertex
 from .graphstores.base import GraphStore
 from .readers import read_document
 
-# An id: letters, one or more middle parts, three digits. SRS-BRK-011, TC-BRK-011, SRS-SYS-BRK-050.
+# An id: letters, one or more middle parts, three digits. SRS-BRK-011, TC-BRK-011, SYS-SRS-BRK-050.
 ID_FORM = r"[A-Z]+(?:-[A-Z0-9]+)+?-\d{3}"
 _REQ_LINE = re.compile(rf"^- \*\*(?P<id>{ID_FORM})\*\*\s*(?P<text>.*)$")
 _SECTION = re.compile(r"^#{2,6}\s+(?P<title>.+)$")
@@ -127,18 +127,18 @@ def shall_subject(text: str) -> str:
 
 
 def id_parts(requirement_id: str, rules: dict | None = None) -> tuple[str | None, str]:
-    """(marker, the id without it): "SRS-SYS-BRK-050" -> ("SYS", "SRS-BRK-050");
-    "SRS-BRK-011" -> (None, "SRS-BRK-011"). Only a known marker right after "SRS-" in a four-part id counts."""
+    """(marker, the id without it): "SYS-SRS-BRK-050" -> ("SYS", "SRS-BRK-050");
+    "SRS-BRK-011" -> (None, "SRS-BRK-011"). Only a known marker in front of "SRS-" in a four-part id counts."""
     parts = str(requirement_id).upper().split("-")
     markers = set((rules or classification_rules())["id_marker"].values())
-    if len(parts) == 4 and parts[0] == "SRS" and parts[1] in markers:
-        return parts[1], "-".join([parts[0], *parts[2:]])
+    if len(parts) == 4 and parts[1] == "SRS" and parts[0] in markers:
+        return parts[0], "-".join(parts[1:])
     return None, str(requirement_id).upper()
 
 
 def level_of_id(requirement_id: str, rules: dict | None = None) -> str | None:
-    """The level a requirement id announces: SRS-SYS-… system, SRS-SW-… software,
-    plain SRS-… the ontology's `unmarked` (software). None when it is not an SRS- id."""
+    """The level a requirement id announces: SYS-SRS-… system, SW-SRS-… software,
+    plain SRS-… the ontology's `unmarked` (software). None when it is not an SRS id."""
     rules = rules or classification_rules()
     marker, plain = id_parts(requirement_id, rules)
     if marker:
@@ -147,10 +147,10 @@ def level_of_id(requirement_id: str, rules: dict | None = None) -> str | None:
 
 
 def id_for(requirement_id: str, level: str, rules: dict | None = None) -> str:
-    """The same id marked for a level: id_for("SRS-BRK-050", "system") -> "SRS-SYS-BRK-050"."""
+    """The same id marked for a level: id_for("SRS-BRK-050", "system") -> "SYS-SRS-BRK-050"."""
     rules = rules or classification_rules()
-    marker, (head, _, rest) = rules["id_marker"].get(level), id_parts(requirement_id, rules)[1].partition("-")
-    return f"SRS-{marker}-{rest}" if marker and rest else str(requirement_id)
+    marker, plain = rules["id_marker"].get(level), id_parts(requirement_id, rules)[1]
+    return f"{marker}-{plain}" if marker and plain.startswith("SRS-") else str(requirement_id)
 
 
 def classify(text: str, attrs: dict | None = None, rules: dict | None = None, requirement_id: str | None = None) -> tuple[str, str]:
