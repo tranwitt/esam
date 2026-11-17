@@ -52,13 +52,14 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   (`ESAM_EMBED_CLIENT=auto|sdk|http`). `ESAM_EMBED_BASE_URL` is a base URL again (`…/v1` → `…/v1/embeddings`); a value
   already ending in `/embeddings` is accepted. The SDK path is tested with a stand-in module only: the session that
   wrote it had no `openai` package. Run `python -m esamkit.environment` against the real endpoint.
-- **System vs software requirements** (ontology v0.7, no SSS type): every SRS requirement gets `level` (system |
-  software) and `level_source` (stated via `Level:` on the attribute line | wording, from the subject of its shall |
-  assumed). Rule and word lists: `requirement_classification` in the ontology; code: `traceability.classify`.
-  `TRACES_TO` links a requirement to a parent requirement on its `Traces to:` line. Tests:
-  `tests/test_requirement_levels.py`. The changed SQL in `graphstores/postgres_cte.py` (`UNTESTED_REQUIREMENTS`,
-  `TRACE_SUMMARY`) has NOT been run against PostgreSQL. An existing graph has no `level` until
-  `python -m crew.main graph reload` (read as software until then).
+- **System vs software requirements** (ontology v0.8, no SSS type): both are written in the SRS and the id says
+  which: `SYS-<code>-0NN` system, `SRS-<code>-0NN` software (`requirement_classification.id_prefix`). Every
+  Requirement has `level` and `level_source` (`id`). A `Level:` line or wording (subject of the shall) that disagrees
+  with the id is a review issue naming the id it should have; an id with neither prefix is classified by that check.
+  `TRACES_TO` links a requirement to a parent requirement on its `Traces to:` line. Code: `traceability.classify`,
+  `level_of_id`. Tests: `tests/test_requirement_levels.py`. Shipped SRS documents are unchanged (all `SRS-`, all
+  software). The changed SQL in `graphstores/postgres_cte.py` has NOT been run against PostgreSQL; reload the graph
+  (`python -m crew.main graph reload`) to give existing requirements a level.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

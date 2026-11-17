@@ -41,7 +41,8 @@ from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
 from .ontology import Ontology, check_baseline, find_node, part_sets
 from .readers import PICTURES, convert
-from .traceability import _ID, LEVELS, load_traceability, read_requirements, read_test_cases
+from .traceability import (_ID, LEVELS, classification_rules, id_for, load_traceability, read_requirements,
+                           read_test_cases, shall_subject)
 from .vectorstores.base import VectorStore
 
 _TITLE = re.compile(r"^#\s+(?P<id>[A-Z]+-[A-Z0-9]+-\d{3})\s*[—–-]\s*(?P<name>.+?)\s*$")
@@ -49,7 +50,7 @@ _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
 
 
 _OWNER_COLUMNS = ("subsystem", "system", "vehicle", "attached to", "attached_to")
-_REQ_ID = re.compile(r"^SRS-[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
+_REQ_ID = re.compile(r"^(SYS|SRS)-[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
 ORIGINALS = "originals"       # data/documents/originals/: Word and picture files as they were delivered
 
 
@@ -228,8 +229,10 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         out["still_untested"] = [r["eid"] for r in graph.untested_requirements()
                                  if r["subsystem"] == entry.get("attached_to") and r["eid"] not in covered]
     elif dtype == "srs":
-        # Every requirement is a SYSTEM or a SOFTWARE requirement (traceability.classify): stated on its attribute
-        # line, else from the subject of its "shall", else assumed.
+        # Every requirement is a SYSTEM or a SOFTWARE requirement and its id says which (SYS-… / SRS-…). Its
+        # `Level:` line and its wording are the cross-check (traceability.classify).
+        rules = classification_rules()
+        prefixes = rules["id_prefix"]
         found = read_requirements(text, aid, entry.get("attached_to", "")).vertices
         others = {r for r, p in reqs.items() if p.get("source_artifact") != aid}
         here = {v.eid: v.props for v in found}
@@ -243,12 +246,16 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
             out["requirements"].append({"id": v.eid, "level": p["level"], "level_source": p["level_source"],
                                         "text": p["text"], "section": p["section"], "traces_to": parents})
             if p.get("level_as_written"):
-                out["issues"].append(f"{v.eid}: Level: {p['level_as_written']!r} is not 'system' or 'software'; "
-                                     f"classified as {p['level']} from its wording")
-            elif p["level_source"] == "assumed" and " shall " in f" {p['text'].lower()} ":
-                out["issues"].append(f"{v.eid}: neither a Level: nor the wording says whether this is a system or a "
-                                     f"software requirement (who 'shall'?); taken as {p['level']}. Add 'Level: system' "
-                                     "or 'Level: software' to its attribute line")
+                out["issues"].append(f"{v.eid}: Level: {p['level_as_written']!r} is not 'system' or 'software'")
+            if p.get("level_expected"):
+                why = ("its attribute line says 'Level: " + p["level_expected"] + "'" if p["level_expected_by"] == "stated"
+                       else f"its wording reads as a {p['level_expected']} requirement (\"{shall_subject(p['text'])} shall\")")
+                out["issues"].append(f"{v.eid}: the id says {p['level']} requirement, but {why}. If it is a "
+                                     f"{p['level_expected']} requirement, number it {id_for(v.eid, p['level_expected'], rules)}")
+            if p["level_source"] != "id":
+                out["issues"].append(f"{v.eid}: the id does not say whether this is a system or a software requirement: "
+                                     f"start it {prefixes.get('system', 'SYS')}- (system) or {prefixes.get('software', 'SRS')}- "
+                                     f"(software). Taken as {p['level']} ({p['level_source']})")
             for parent in parents:
                 if not parent["exists"]:
                     out["issues"].append(f"{v.eid}: traces to {parent['id']}, which is not a requirement in this document or the graph")
@@ -272,7 +279,8 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         out["issues"] += [f"{v.eid}: already specified in {reqs[v.eid]['source_artifact']}" for v in found if v.eid in others]
         out["issues"] += [f"{v.eid}: no 'shall'" for v in found if " shall " not in f" {v.props['text'].lower()} "]
         if not found:
-            out["issues"].append("no requirement lines ('- **SRS-…** The software shall …') found")
+            out["issues"].append("no requirement lines ('- **SRS-…** The software shall …' or "
+                                 "'- **SYS-…** The <unit> shall …') found")
     return out
 
 

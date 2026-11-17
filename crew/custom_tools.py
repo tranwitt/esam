@@ -231,7 +231,7 @@ class CheckCoverageTool(WorkbenchTool):
 
 
 class RequirementInput(BaseModel):
-    requirement_id: str = Field(..., description="Requirement id, e.g. SRS-BRK-011")
+    requirement_id: str = Field(..., description="Requirement id: SRS-BRK-011 (software) or SYS-BRK-050 (system)")
 
 
 class VerifiedByTool(WorkbenchTool):

@@ -11,17 +11,21 @@ module reads them out, deterministically (no AI), and turns them into:
     TestCase    ──SPECIFIED_IN──► DesignArtifact (its STD)
     TestCase    ──VERIFIES──────► Requirement
 
-Every requirement is classified as a SYSTEM requirement (what the subsystem
-as a whole must do, whatever mix of hardware and software does it) or a
-SOFTWARE requirement (what the software itself must do), and carries
-`level` and `level_source`. All of them come from the SRS; the rule is the
-ontology's (`requirement_classification`), applied in this order:
+Every requirement is a SYSTEM requirement (what the subsystem as a whole
+must do, whatever mix of hardware and software does it) or a SOFTWARE
+requirement (what the software itself must do). Both are written in the SRS
+and the ID says which (the ontology's `requirement_classification`):
 
-    1. stated    its attribute line says `Level: system` or `Level: software`
-    2. wording   the subject of its "shall": "... the software shall" is
-                 software; "The Brake Control ECU shall" is system
-    3. assumed   neither: the ontology's default (software), and the review
-                 says it was assumed
+    SYS-BRK-050   system requirement
+    SRS-BRK-060   software requirement
+
+Each carries `level` and `level_source` ("id"). The wording is only a
+cross-check: a `Level:` on the attribute line, or the subject of the
+"shall" ("the software shall" / "The Brake Control ECU shall"), that
+disagrees with the id is recorded as `level_expected` and reported by the
+review, so a requirement numbered as the wrong kind is noticed. An id with
+neither prefix is classified by that check instead (stated, wording, else
+assumed), and reported.
 
 A software requirement whose `Traces to:` names a system requirement gets a
 TRACES_TO link to it, which answers "which system requirements has no
@@ -33,12 +37,12 @@ contributed: a deleted requirement doesn't linger.
 
 The formats it reads are the ones the manual asks SEs to write:
 
-    - **SRS-BRK-005** The Brake Control ECU shall prevent wheel lock-up ...
-      Level: system | Verification: T
+    - **SYS-BRK-005** The Brake Control ECU shall prevent wheel lock-up ...
+      Verification: T
 
     - **SRS-BRK-011** The software shall release brake pressure ...
       (continuation lines indented)
-      Verification: T | Traces to: SRS-BRK-005
+      Verification: T | Traces to: SYS-BRK-005
 
     ## TC-BRK-011 — Pressure release time on incipient wheel lock-up
     Verifies: SRS-BRK-011.
@@ -90,7 +94,7 @@ def _short(text: str, n: int = 90) -> str:
 
 LEVELS = ("system", "software")
 _LEVEL_WORDS = {"system": "system", "sys": "system", "software": "software", "sw": "software"}
-DEFAULT_CLASSIFICATION = {"default": "software", "subjects": {
+DEFAULT_CLASSIFICATION = {"id_prefix": {"system": "SYS", "software": "SRS"}, "default": "software", "subjects": {
     "software": ["software", "firmware", "csci", "application", "program", "code", "algorithm", "task", "driver"],
     "system": ["system", "subsystem", "vehicle", "ecu", "unit", "module", "controller", "hardware", "equipment"]}}
 
@@ -100,7 +104,7 @@ def classification_rules() -> dict:
     try:
         from .ontology import default_ontology
         rules = default_ontology().requirement_classification()
-        return rules if rules["subjects"] else DEFAULT_CLASSIFICATION
+        return rules if rules["subjects"] and rules["id_prefix"] else {**DEFAULT_CLASSIFICATION, **{k: v for k, v in rules.items() if v}}
     except Exception:
         return DEFAULT_CLASSIFICATION
 
@@ -120,12 +124,28 @@ def shall_subject(text: str) -> str:
     return " ".join(clause.lower().split())
 
 
-def classify(text: str, attrs: dict | None = None, rules: dict | None = None) -> tuple[str, str]:
+def level_of_id(requirement_id: str, rules: dict | None = None) -> str | None:
+    """The level a requirement id announces: SYS-… system, SRS-… software; None for any other prefix."""
+    prefix = str(requirement_id).split("-", 1)[0].upper()
+    return next((level for level, p in (rules or classification_rules())["id_prefix"].items() if p == prefix), None)
+
+
+def id_for(requirement_id: str, level: str, rules: dict | None = None) -> str:
+    """The same id renumbered for a level: id_for("SRS-BRK-050", "system") -> "SYS-BRK-050"."""
+    prefix = (rules or classification_rules())["id_prefix"].get(level)
+    return f"{prefix}-{requirement_id.split('-', 1)[1]}" if prefix and "-" in requirement_id else requirement_id
+
+
+def classify(text: str, attrs: dict | None = None, rules: dict | None = None, requirement_id: str | None = None) -> tuple[str, str]:
     """(level, how it was decided) for one requirement.
-    how: "stated" (its `Level:`), "wording" (the subject of its shall) or
-    "assumed" (the default). A software word in the subject wins: "the ECU
-    software shall" is a software requirement."""
+    With `requirement_id`, an id that announces a level decides: how = "id".
+    Otherwise, and for the cross-check (call it without the id): "stated"
+    (its `Level:`), "wording" (the subject of its shall) or "assumed" (the
+    default). A software word in the subject wins: "the ECU software shall"
+    is a software requirement."""
     rules = rules or classification_rules()
+    if requirement_id and (by_id := level_of_id(requirement_id, rules)):
+        return by_id, "id"
     said = stated_level((attrs or {}).get("level"))
     if said:
         return said, "stated"
@@ -137,18 +157,23 @@ def classify(text: str, attrs: dict | None = None, rules: dict | None = None) ->
 
 
 def read_requirements(text: str, artifact_id: str, subsystem: str, rules: dict | None = None) -> Extracted:
-    """The requirements stated in an SRS, each classified as a system or a
-    software requirement (`level`, `level_source`; see classify)."""
+    """The requirements stated in an SRS. Each is a system or a software
+    requirement as its id says (`level`, `level_source`; see classify). When
+    its `Level:` line or its wording says the other, `level_expected` and
+    `level_expected_by` record that for the review."""
     out, section, cur = Extracted(), "", None
     rules = rules or classification_rules()
 
     def close():
         if cur:
             body = " ".join(cur["lines"]).strip()
-            level, how = classify(body, cur["attrs"], rules)
+            level, how = classify(body, cur["attrs"], rules, cur["id"])
             attrs = {k: v for k, v in cur["attrs"].items() if k != "level"}
-            if cur["attrs"].get("level") and how != "stated":
+            said, said_by = classify(body, cur["attrs"], rules)             # the cross-check: Level: line, then wording
+            if cur["attrs"].get("level") and said_by != "stated":
                 attrs["level_as_written"] = cur["attrs"]["level"]       # e.g. "Level: hardware": reported by the review
+            if how == "id" and said_by in ("stated", "wording") and said != level:
+                attrs.update(level_expected=said, level_expected_by=said_by)
             out.vertices.append(Vertex("Requirement", {
                 "id": cur["id"], "name": _short(body), "text": body, "level": level, "level_source": how,
                 "section": cur["section"], "source_artifact": artifact_id, "subsystem": subsystem, **attrs}))

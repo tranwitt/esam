@@ -47,16 +47,15 @@ a2_document_review:
     be stricter; say for each test case MATCHES, STRICTER, WEAKER or UNCLEAR
     and quote both sides. Note test cases whose cited requirement is already
     verified elsewhere, and the subsystem's requirements that remain untested
-    after this document. For an SRS, every requirement is classified as a
-    system requirement (what the subsystem as a whole must do) or a software
-    requirement (what the software must do): report the two as separate
-    lists with their counts (levels), and for each say how its level was
-    decided (level_source: stated, wording or assumed). Question any that
-    look wrongly classified and list every 'assumed' one for the SE to
-    settle with a 'Level:' on its attribute line. Say which system
-    requirement each software requirement traces to (traces_to), and which
-    system requirements no software requirement traces to (traced_by
-    empty). Check every requirement is a single,
+    after this document. For an SRS, every requirement is a system
+    requirement (id SYS-..., what the subsystem as a whole must do) or a
+    software requirement (id SRS-..., what the software must do); the id
+    decides. Report the two as separate lists with their counts (levels).
+    Report every issue where an id disagrees with the requirement's Level:
+    line or its wording, giving the id it should have, and every id that
+    has neither prefix. Say which system requirement each software
+    requirement traces to (traces_to), and which system requirements no
+    software requirement traces to (traced_by empty). Check every requirement is a single,
     testable 'shall' with a measurable value, and flag any that is not. Use
     search_documents or verified_by only to confirm something in the
     document against an existing one; cite document ids. Report the tool's

@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.7"
+  version: "0.8"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -58,7 +58,7 @@ value_sets:
     "SwCI 4": "Low"
     "SwCI 5": "No safety impact"
   # Whose requirement it is. Every requirement read from an SRS is one or the
-  # other; how that is decided is in `requirement_classification` below.
+  # other, and its ID says which (`requirement_classification` below).
   requirement_level:
     system: "System requirement: what the subsystem (or the vehicle) as a whole must do, whatever mix of hardware and software does it"
     software: "Software requirement: what the software itself must do"
@@ -151,17 +151,16 @@ classes:
   # not written in the baseline: esamkit/traceability.py. Each records the
   # document it came from, so a new revision replaces what the old one gave.
   Requirement:
-    description: "One 'shall' statement in an SRS, read from its '- **SRS-…**' line and classified as a system or a software requirement."
-    id_pattern: '^SRS-[A-Z0-9]+-0[1-9]\d$'
+    description: "One 'shall' statement in an SRS. Its id says whether it is a system requirement ('- **SYS-…**') or a software requirement ('- **SRS-…**')."
+    id_pattern: '^(SYS|SRS)-[A-Z0-9]+-0[1-9]\d$'
     source: document
     attributes:
       text: { type: text, required: true }
-      # system | software (see requirement_classification), and how that was decided:
-      #   stated   the requirement's attribute line says `Level: system` / `Level: software`
-      #   wording  from the subject of its "shall" ("The software shall" / "The brake ECU shall")
-      #   assumed  neither: taken as the default
+      # system | software, and how that was decided (see requirement_classification):
+      #   id       from its id: SYS-… is a system requirement, SRS-… a software requirement
+      #   stated / wording / assumed   only for an id with neither prefix (which the review reports)
       level: { type: enum, values: requirement_level, required: true }
-      level_source: { type: text, description: "stated | wording | assumed" }
+      level_source: { type: text, description: "id | stated | wording | assumed" }
       section: { type: text }
       subsystem: { type: ref, class: Subsystem }
       source_artifact: { type: ref, class: DesignArtifact, required: true }
@@ -269,18 +268,34 @@ placement:
     timing: { type: text, pattern: '^\d+(\.\d+)? ?(ms|s|us)( max| min| ± ?\d+(\.\d+)? ?(ms|s|us))?$', description: "e.g. '20 ms max', '100 ms ± 10 ms'" }
     verification: { values: verification_method }
     traces_to: { type: ref_list, description: "Parent requirement IDs" }
-    level: { values: requirement_level, description: "Level: system or software. Write it when the wording does not make it plain" }
+    level: { values: requirement_level, description: "Optional. Level: system or software; must agree with the requirement's id" }
 
 # ── System requirement or software requirement? ──────────────────────────────
-# Every requirement read from an SRS is classified, in this order:
-#   1. its attribute line says so:        Level: system | Verification: T
-#   2. the SUBJECT of its "shall" (the words just before "shall"):
+# The ID says it. Both kinds are written in the SRS:
+#
+#     - **SYS-BRK-050** The Brake Control ECU shall prevent wheel lock-up ...     system
+#     - **SRS-BRK-060** The software shall command pressure release ...           software
+#       Verification: T | Traces to: SYS-BRK-050
+#
+# `id_prefix` is the first part of the id for each level. (A system
+# requirement id has three parts, SYS-BRK-050; a System in the baseline has
+# two, SYS-SUSP. To use another prefix change it here and in
+# classes.Requirement.id_pattern.)
+#
+# The rest is a CROSS-CHECK, so a requirement numbered as the wrong kind is
+# noticed: the review reports an id whose level disagrees with
+#   - `Level:` on the requirement's attribute line, or
+#   - the SUBJECT of its "shall" (the words just before "shall"):
 #        "... the software shall ..."        -> software
 #        "The Brake Control ECU shall ..."   -> system
-#      A subject with a software word is software, whatever else it names
-#      ("the ECU software shall"). Add your programme's own words below.
-#   3. otherwise `default`, and the review says the level was assumed.
+#     A subject with a software word is software, whatever else it names
+#     ("the ECU software shall"). Add your programme's own words below.
+# An id with neither prefix is reported too, and classified by that same
+# check, falling back to `default`.
 requirement_classification:
+  id_prefix:
+    system: SYS
+    software: SRS
   default: software
   subjects:
     software: [software, firmware, csci, csc, application, program, code, algorithm, task, driver, routine, function block]
