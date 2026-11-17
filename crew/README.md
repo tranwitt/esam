@@ -183,6 +183,23 @@ split over several SRS parts all land on the subsystem. The required-documents r
 the type; an incomplete set shows as a warning in health check 5 and beside the document in the Cockpit.
 Documents without `part` (two ICDs for one ECU) are simply two documents.
 
+**System requirements and software requirements.** Requirements are read out of specifications, and the kind of
+specification decides whose requirement each one is (the ontology's `document_types.<type>.requirements`):
+
+| Document | Requirements are | Ids | Allocated to |
+|---|---|---|---|
+| SSS, System/Subsystem Specification | **system** requirements | `SSS-LTV-010` | what the SSS is attached to: the vehicle, a system or a subsystem |
+| SRS, Software Requirements Specification | **software** requirements | `SRS-BRK-011` | the SRS's subsystem |
+
+Every requirement in the graph carries `level: system` or `level: software`; it is never guessed from the wording.
+A software requirement names the system requirement it derives from on its attribute line
+(`Verification: T | Traces to: SSS-LTV-010`), which becomes a `TRACES_TO` link, so the review of an SRS shows each
+parent's text and the review of an SSS shows which system requirements no software requirement has picked up.
+A requirement line carrying the other level's id (an `SSS-…` line in an SRS) is reported and not read as that
+document's requirement. Test cases verify either level. The health report, `verified_by`, `graph reload` and the
+Cockpit's requirement coverage all show the two apart. A sample system specification for the vehicle:
+`python -m crew.main review lessons/06_missing_document/staged/SSS-LTV-001.md`.
+
 **System-level documents (SSDD).** Every document type is attached to a subsystem except the SSDD, which the
 ontology lets sit on the vehicle system, one system or a subsystem (`document_types.ssdd.attaches_to:
 [Vehicle, System, Subsystem]` in `data/ontology/esam_ontology.yaml`). The last header column then holds

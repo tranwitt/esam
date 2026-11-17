@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.5"
+  version: "0.6"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -57,6 +57,11 @@ value_sets:
     "SwCI 3": "Medium"
     "SwCI 4": "Low"
     "SwCI 5": "No safety impact"
+  # Whose requirement it is. Set by the KIND OF DOCUMENT the requirement is read
+  # from (document_types.<type>.requirements), never guessed from its wording.
+  requirement_level:
+    system: "System requirement: what the vehicle, a system or a subsystem as a whole must do (stated in an SSS)"
+    software: "Software requirement: what a subsystem's software must do (stated in an SRS)"
   verification_method:
     I: "Inspection"
     A: "Analysis"
@@ -129,7 +134,7 @@ classes:
       safety_classification: { type: text, pattern: '^(MIL-STD-882E )?SwCI [1-5]$' }
   DesignArtifact:
     description: "A controlled document attached to the thing it describes: a subsystem, or for a system-level document (SSDD) the vehicle or one of its systems."
-    id_pattern: '^(ICD|SRS|SDD|SSDD|STD|STP|STR)-[A-Z0-9]+-00[1-9]$'
+    id_pattern: '^(ICD|SSS|SRS|SDD|SSDD|STD|STP|STR)-[A-Z0-9]+-00[1-9]$'
     attributes:
       type: { type: enum, values: document_types, required: true }
       revision: { type: text, pattern: '^[A-Z]{1,2}$', required: true }
@@ -146,19 +151,23 @@ classes:
   # not written in the baseline: esamkit/traceability.py. Each records the
   # document it came from, so a new revision replaces what the old one gave.
   Requirement:
-    description: "One 'shall' statement in an SRS, read from its '- **SRS-…**' line."
-    id_pattern: '^SRS-[A-Z0-9]+-0[1-9]\d$'
+    description: "One 'shall' statement, read from its '- **SSS-…**' line in an SSS (a system requirement) or its '- **SRS-…**' line in an SRS (a software requirement)."
+    id_pattern: '^(SSS|SRS)-[A-Z0-9]+-0[1-9]\d$'
     source: document
     attributes:
       text: { type: text, required: true }
+      # system | software: from the kind of document it is stated in. Its id says the same (SSS-… / SRS-…).
+      level: { type: enum, values: requirement_level, required: true }
       section: { type: text }
-      subsystem: { type: ref, class: Subsystem }
+      # What it is allocated to: the owner of its document. A subsystem for a software
+      # requirement; the vehicle, a system or a subsystem for a system requirement.
+      subsystem: { type: text, description: "Id of the owner of the requirement's document" }
       source_artifact: { type: ref, class: DesignArtifact, required: true }
       # From the attribute line under the requirement (SE manual §9.4), when present:
       verification: { type: text_list, values: verification_method, description: "Verification: I, A, D or T (DI-IPSC-81433A 4)" }
       safety: { type: enum, values: software_criticality, description: "Safety: the SwCI, MIL-STD-882E Table V" }
       timing: { type: text, description: "Timing: a value with units, e.g. '20 ms max'" }
-      traces_to: { type: text_list, description: "Traces to: parent ids (DI-IPSC-81433A 5.a)" }
+      traces_to: { type: text_list, description: "Traces to: parent ids (DI-IPSC-81433A 5.a). A parent that is a requirement (a software requirement's system requirement) becomes a TRACES_TO link" }
       basis: { type: text_list, description: "Basis: standard clauses from the standards library" }
   TestCase:
     description: "One test case in an STD, read from its 'TC-…' heading and fixed fields."
@@ -191,7 +200,8 @@ relationships:
       source_artifact: { type: ref, class: DesignArtifact, description: "The interface document that defines it" }
   VERIFIES:      { from: [TestCase], to: [Requirement], meaning: "test case verifies requirement (from its Verifies: line)" }
   SPECIFIED_IN:  { from: [Requirement, TestCase], to: [DesignArtifact], meaning: "item is stated in document" }
-  ALLOCATED_TO:  { from: [Requirement], to: [Subsystem], meaning: "requirement is met by subsystem (the SRS's subsystem)" }
+  ALLOCATED_TO:  { from: [Requirement], to: [Vehicle, System, Subsystem], meaning: "requirement is met by the owner of its document (an SRS's subsystem; an SSS's vehicle, system or subsystem)" }
+  TRACES_TO:     { from: [Requirement], to: [Requirement], meaning: "requirement is derived from a higher-level one (from its Traces to: line): software requirement -> system requirement" }
 
 # ── Kinds of documents ───────────────────────────────────────────────────────
 # standard:  where the name comes from.
@@ -199,12 +209,23 @@ relationships:
 #            Left out = [Subsystem]. The SSDD is the system-level design
 #            (MIL-STD-498 "System/Subsystem"), so it may sit on the whole
 #            vehicle system (V-001), on one system (SYS-…) or on a subsystem.
+# requirements: the level of the requirements read out of a document of this
+#            type (value_sets.requirement_level). Only types that have it yield
+#            requirements: an SSS gives system requirements, an SRS software ones.
 # answers:   words in a question that mean this document type would answer it
 #            (replaces the keyword table in esamkit/coverage.py in step 2).
 document_types:
+  sss:
+    name: "System/Subsystem Specification"
+    standard: "MIL-STD-498 / J-STD-016"
+    attaches_to: [Vehicle, System, Subsystem]
+    requirements: system
+    answers: [system requirement, system specification, system shall, subsystem specification]
+    synonyms: ["system spec", "system requirements", "subsystem specification", "system/subsystem specification"]
   srs:
     name: "Software Requirements Specification"
     standard: "MIL-STD-498 / J-STD-016"
+    requirements: software
     answers: [requirement, shall, required, specification]
     synonyms: ["SSR", "software requirements", "requirements spec"]
   sdd:

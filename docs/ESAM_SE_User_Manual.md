@@ -581,7 +581,7 @@ Until now the graph knew about **documents**: the Brake ECU has an SRS. It now a
 
 | Item | Read from | Linked to |
 |---|---|---|
-| **Requirement** | Each `SRS-…` line in an SRS (§9.4) | *specified in* its SRS; *allocated to* the SRS's subsystem |
+| **Requirement** | Each `SSS-…` line in an SSS (a **system** requirement) or `SRS-…` line in an SRS (a **software** requirement). The kind of document decides which; the two are counted and shown apart (§9.4) | *specified in* its document; *allocated to* what that document is attached to (an SRS's subsystem; an SSS's vehicle, system or subsystem); a software requirement **traces to** each system requirement on its `Traces to:` line |
 | **Test case** | Each `TC-…` heading in an STD, with its fixed fields (§9.5) | *specified in* its STD; **verifies** each requirement on its `Verifies:` line |
 
 Nothing is guessed. ESAM reads the formats this manual asks you to write, and every item remembers which document it came from. When a new revision of a document is loaded, everything the old revision contributed is replaced, so a deleted requirement or test case doesn't linger.

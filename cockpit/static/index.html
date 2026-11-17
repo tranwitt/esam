@@ -176,6 +176,7 @@ svg .s-fn { stroke: var(--t-fn); }   svg .s-doc { stroke: var(--t-doc); }
 svg .s-req { stroke: var(--t-req); } svg .s-tc { stroke: var(--t-tc); }
 svg .f-req { fill: var(--t-req); }   svg .f-tc { fill: var(--t-tc); }
 svg .link.verifies { stroke: var(--t-tc); stroke-width: 2; stroke-dasharray: 4 3; }
+svg .link.traces { stroke: var(--t-req); stroke-width: 1.5; stroke-dasharray: 1 4; stroke-linecap: round; }
 svg .f-top { fill: var(--t-top); } svg .f-sys { fill: var(--t-sys); } svg .f-sub { fill: var(--t-sub); }
 svg .f-fn { fill: var(--t-fn); }   svg .f-doc { fill: var(--t-doc); }
 svg.net circle { stroke: var(--sheet); stroke-width: 2; }
@@ -356,9 +357,12 @@ footer { color: var(--ink-2); font-size: 12px; }
       </div>
       <div class="panel">
         <h2>Requirement coverage</h2>
-        <p class="sub">Requirements are read from each SRS and test cases from each STD; a test case covers a requirement through its
-          <em>Verifies:</em> line. A requirement with no test case verifying it is untested.</p>
+        <p class="sub">System requirements are read from each SSS and software requirements from each SRS; the two are counted apart.
+          Test cases are read from each STD; a test case covers a requirement through its <em>Verifies:</em> line, and a requirement
+          with no test case verifying it is untested. A software requirement points at the system requirement it derives from
+          with its <em>Traces to:</em> line.</p>
         <div class="scroll"><table id="tracecov"></table></div>
+        <details class="untested" id="flowdown"></details>
         <details class="untested" id="untested"></details>
       </div>
       <div class="panel" id="checks-panel">
@@ -473,7 +477,14 @@ const TYPES = {
   Requirement:    { code: "REQ", cls: "req", name: "Requirement",    rank: 7, r: 5 },
   TestCase:       { code: "TC",  cls: "tc",  name: "Test case",      rank: 8, r: 5 },
 };
-const typeOf = (v) => TYPES[v.label] || { code: v.label.slice(0, 3).toUpperCase(), cls: "top", name: v.label, rank: 9, r: 8 };
+// A requirement is a system requirement (from an SSS) or a software requirement (from an SRS): props.level.
+const LEVELS = { system: { code: "SYS REQ", name: "System requirement" }, software: { code: "SW REQ", name: "Software requirement" } };
+const levelOf = (v) => (v && v.label === "Requirement" ? (v.props.level || "software") : null);
+const typeOf = (v) => {
+  const t = TYPES[v.label] || { code: v.label.slice(0, 3).toUpperCase(), cls: "top", name: v.label, rank: 9, r: 8 };
+  const lv = LEVELS[levelOf(v)];
+  return lv ? { ...t, code: lv.code, name: lv.name, rank: t.rank + (levelOf(v) === "system" ? 0 : 0.5) } : t;
+};
 
 // h("tag.cls", {attrs}, ...children): small DOM builder. Text is always set
 // as text, never parsed as HTML.
@@ -507,7 +518,7 @@ const store = {
 let M = null;
 function buildModel(data) {
   const byId = new Map(data.graph.vertices.map((v) => [v.eid, v]));
-  const parent = new Map(), children = new Map(), ifaces = [], docsOf = new Map(), verifies = [];
+  const parent = new Map(), children = new Map(), ifaces = [], docsOf = new Map(), verifies = [], traces = [];
   const kid = (p, c) => { if (!children.has(p)) children.set(p, []); children.get(p).push(c); };
   for (const e of data.graph.edges) {
     if (e.type === "PART_OF") { parent.set(e.from_eid, e.to_eid); kid(e.to_eid, e.from_eid); }
@@ -517,6 +528,7 @@ function buildModel(data) {
       docsOf.get(e.from_eid).push(byId.get(e.to_eid));
     } else if (e.type === "SPECIFIED_IN") { parent.set(e.from_eid, e.to_eid); kid(e.to_eid, e.from_eid); }
     else if (e.type === "VERIFIES") verifies.push(e);
+    else if (e.type === "TRACES_TO") traces.push(e);            // software requirement -> the system requirement it derives from
     else if (e.type === "INTERFACES_WITH") ifaces.push(e);
   }
   const order = (a, b) => {
@@ -532,7 +544,7 @@ function buildModel(data) {
     for (const id of eids) { if (!gapsOf.has(id)) gapsOf.set(id, []); gapsOf.get(id).push(t); }
   const path = (id) => { const p = []; let c = parent.get(id); while (c) { p.unshift(c); c = parent.get(c); } return p; };
   const systemOf = (id) => path(id).map((x) => byId.get(x)).find((v) => v.label === "System");
-  return { data, byId, parent, children, roots, ifaces, docsOf, gapsOf, path, systemOf, verifies };
+  return { data, byId, parent, children, roots, ifaces, docsOf, gapsOf, path, systemOf, verifies, traces };
 }
 
 // ── Selection, shared by every view ──────────────────────────────────────────
@@ -702,20 +714,38 @@ function renderHealth() {
 function renderTrace() {
   const tr = M.data.trace;
   if (!tr) { $("#tracecov").replaceChildren(h("tbody", {}, h("tr", {}, h("td.note", {}, "Not available in this snapshot.")))); $("#untested").hidden = true; return; }
-  const rows = tr.summary.filter((r) => r.requirements > 0);
-  const total = rows.reduce((n, r) => n + r.requirements, 0), ver = rows.reduce((n, r) => n + r.verified, 0);
+  // System requirements (from an SSS) and software requirements (from an SRS) are counted apart.
+  // A snapshot made before the split has only the totals: those were all software requirements.
+  const rows = tr.summary.filter((r) => r.requirements > 0).map((r) => ({ ...r,
+    sys: r.system_requirements ?? 0, sysV: r.system_verified ?? 0,
+    sw: r.software_requirements ?? r.requirements, swV: r.software_verified ?? r.verified }));
+  const sum = (k) => rows.reduce((n, r) => n + r[k], 0);
+  const cell = (have, of) => (of ? h("td", {}, `${have} of ${of} `, h("span.bar", { role: "img", "aria-label": `${Math.round(100 * have / of)}% verified` },
+    h("i", { style: `width:${(100 * have / of).toFixed(1)}%` }))) : h("td", {}, h("span.note", {}, "none")));
   $("#tracecov").replaceChildren(
-    h("thead", {}, h("tr", {}, ["Subsystem", "Requirements", "Verified by a test", ""].map((x) => h("th", {}, x)))),
+    h("thead", {}, h("tr", {}, ["Allocated to", "System requirements verified", "Software requirements verified"].map((x) => h("th", {}, x)))),
     h("tbody", {}, rows.map((r) => h("tr", {},
-      h("td", {}, h("div.who", {}, h("span", {}, r.name, " ", r.safety_critical ? h("span.chip.sc", {}, "SAFETY") : null), nodeLink(r.eid))),
-      h("td", {}, r.requirements), h("td", {}, `${r.verified} of ${r.requirements}`),
-      h("td", {}, h("span.bar", { role: "img", "aria-label": `${Math.round(100 * r.verified / r.requirements)}% verified` },
-        h("i", { style: `width:${(100 * r.verified / r.requirements).toFixed(1)}%` }))))),
-      h("tr", {}, h("td", {}, h("b", {}, "Total")), h("td", {}, h("b", {}, total)), h("td", {}, h("b", {}, `${ver} of ${total}`)), h("td", {}, ""))));
+      h("td", {}, h("div.who", {}, h("span", {}, M.byId.has(r.eid) && r.label && r.label !== "Subsystem" ? [chip(M.byId.get(r.eid)), " "] : null,
+        r.name, " ", r.safety_critical ? h("span.chip.sc", {}, "SAFETY") : null), nodeLink(r.eid))),
+      cell(r.sysV, r.sys), cell(r.swV, r.sw))),
+      h("tr", {}, h("td", {}, h("b", {}, "Total")), h("td", {}, h("b", {}, sum("sys") ? `${sum("sysV")} of ${sum("sys")}` : "none")),
+        h("td", {}, h("b", {}, sum("sw") ? `${sum("swV")} of ${sum("sw")}` : "none")))));
+  // Flow-down: which system requirements a software requirement traces to (its "Traces to:" line).
+  const sysReqs = [...M.byId.values()].filter((v) => levelOf(v) === "system");
+  const picked = new Set(M.traces.map((e) => e.to_eid));
+  const open = sysReqs.filter((v) => !picked.has(v.eid)).sort((a, b) => a.eid.localeCompare(b.eid));
+  $("#flowdown").hidden = !sysReqs.length;
+  $("#flowdown").replaceChildren(
+    h("summary", {}, `${sysReqs.length - open.length} of ${sysReqs.length} system requirement${sysReqs.length === 1 ? "" : "s"} traced to by a software requirement`),
+    open.length ? h("ul", {}, open.map((v) => h("li", {}, nodeLink(v.eid), " ", h("span.note", {}, `${v.props.name || ""} (no software requirement traces to it)`))))
+      : h("p", {}, h("span.note", {}, "Every system requirement has a software requirement tracing to it.")));
   const un = tr.untested || [];
   $("#untested").hidden = !un.length;
-  $("#untested").replaceChildren(h("summary", {}, `${un.length} untested requirement${un.length === 1 ? "" : "s"}`),
-    h("ul", {}, un.map((u) => h("li", {}, nodeLinkIf(u.eid), " ", h("span.note", {}, `${u.name} (${u.subsystem}, ${u.document})`)))));
+  const nSys = un.filter((u) => u.level === "system").length;
+  $("#untested").replaceChildren(h("summary", {}, `${un.length} untested requirement${un.length === 1 ? "" : "s"}`
+    + (un.length && tr.summary.some((r) => r.system_requirements) ? ` (${nSys} system, ${un.length - nSys} software)` : "")),
+    h("ul", {}, un.map((u) => h("li", {}, h("span.chip.t-req", { title: LEVELS[u.level || "software"].name }, LEVELS[u.level || "software"].code), " ",
+      nodeLinkIf(u.eid), " ", h("span.note", {}, `${u.name} (${u.subsystem}, ${u.document})`)))));
 }
 
 // ── Dashboard: checks (latest run of each) ───────────────────────────────────
@@ -928,7 +958,7 @@ function simulate() {
   const ids = [...M.byId.keys()];
   const P = new Map(ids.map((id) => [id, { x: depthOf.get(id) * 120, y: y.get(id) * 1.1, vx: 0, vy: 0 }]));
   const links = M.data.graph.edges;
-  const rest = { PART_OF: 70, HAS_ARTIFACT: 55, INTERFACES_WITH: 110, SPECIFIED_IN: 40, VERIFIES: 60, ALLOCATED_TO: 0 };
+  const rest = { PART_OF: 70, HAS_ARTIFACT: 55, INTERFACES_WITH: 110, SPECIFIED_IN: 40, VERIFIES: 60, TRACES_TO: 90, ALLOCATED_TO: 0 };
   for (let it = 0; it < 500; it++) {
     const cool = 1 - it / 500;
     for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
@@ -964,7 +994,8 @@ function renderNetwork() {
   for (const e of M.data.graph.edges) {
     if (e.type === "ALLOCATED_TO") continue;      // shown in the details panel; would double every requirement's links
     const cls = e.type === "INTERFACES_WITH" ? "iface" + (e.props.status === "candidate" ? " candidate" : "")
-      : e.type === "VERIFIES" ? "link verifies" : "link" + (e.type === "HAS_ARTIFACT" || e.type === "SPECIFIED_IN" ? " doc" : "");
+      : e.type === "VERIFIES" ? "link verifies" : e.type === "TRACES_TO" ? "link traces"
+      : "link" + (e.type === "HAS_ARTIFACT" || e.type === "SPECIFIED_IN" ? " doc" : "");
     const l = s("line", { class: cls, "marker-end": e.type === "INTERFACES_WITH" ? "url(#arw2)" : null });
     l.append(s("title", {}, `${e.from_eid} —${e.type}→ ${e.to_eid}${e.props.message ? " · " + e.props.message : ""}`));
     lines.push([l, e]); svg.append(l);
@@ -1037,6 +1068,15 @@ function renderDetails() {
       h("li", {}, h("span.mono", {}, dt.toUpperCase().padEnd(5, " ")), " ", docState(v, dt)))));
   }
   if (v.label === "Requirement") {
+    const lv = levelOf(v), up = M.traces.filter((e) => e.from_eid === v.eid), down = M.traces.filter((e) => e.to_eid === v.eid);
+    const reqItem = (id) => h("li", {}, nodeLink(id), " ", h("span.note", {}, M.byId.get(id)?.props.name || ""));
+    parts.push(h("h4", {}, "Level"), h("p", {}, h("span.chip.t-req", {}, LEVELS[lv].code), " ", LEVELS[lv].name,
+      h("span.note", {}, lv === "system" ? " (stated in a system/subsystem specification, SSS)" : " (stated in a software requirements specification, SRS)")));
+    if (up.length) parts.push(h("h4", {}, "Traces to"), h("ul", {}, up.map((e) => reqItem(e.to_eid))));
+    else if (lv === "software" && [...M.byId.values()].some((x) => levelOf(x) === "system"))
+      parts.push(h("h4", {}, "Traces to"), h("p", {}, h("span.note", {}, "no system requirement")));
+    if (lv === "system") parts.push(h("h4", {}, "Traced to by"), down.length ? h("ul", {}, down.map((e) => reqItem(e.from_eid)))
+      : h("p", {}, h("span.note", {}, "no software requirement traces to this yet")));
     const by = M.verifies.filter((e) => e.to_eid === v.eid);
     parts.push(h("h4", {}, "Verified by"), by.length
       ? h("ul", {}, by.map((e) => h("li", {}, nodeLink(e.from_eid), " ", h("span.note", {}, M.byId.get(e.from_eid)?.props.name || ""))))

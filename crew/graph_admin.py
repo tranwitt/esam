@@ -178,8 +178,9 @@ def run(args, graph: GraphStore | None = None, s: Settings | None = None) -> int
     print(f"Before : {_line(res['before'])}")
     print(f"After  : {_line(res['graph'])}")
     t = res["traceability"]
-    print(f"Traceability (from the documents): {t['requirements']} requirements, {t['test_cases']} test cases, "
-          f"{t['verifies']} verifies links")
+    print(f"Traceability (from the documents): {t['requirements']} requirements "
+          f"({t['system_requirements']} system, {t['software_requirements']} software), {t['test_cases']} test cases, "
+          f"{t['verifies']} verifies links, {t['traces']} software-to-system traces")
     for u in t["unresolved"]:
         print(f"  ! {u['test_case']} verifies {u['cites']}, which no SRS defines")
     if res["ontology_errors"]:

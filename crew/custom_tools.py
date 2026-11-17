@@ -231,12 +231,14 @@ class CheckCoverageTool(WorkbenchTool):
 
 
 class RequirementInput(BaseModel):
-    requirement_id: str = Field(..., description="Requirement id, e.g. SRS-BRK-011")
+    requirement_id: str = Field(..., description="Requirement id: SRS-BRK-011 (software) or SSS-LTV-010 (system)")
 
 
 class VerifiedByTool(WorkbenchTool):
     name: str = "verified_by"
-    description: str = "The requirement's text and the test cases that verify it (none = untested)."
+    description: str = ("The requirement's text, its level (system or software), the test cases that verify it "
+                        "(none = untested), and its trace: the system requirements it derives from, or the "
+                        "software requirements that derive from it.")
     args_schema: type[BaseModel] = RequirementInput
 
     def _call(self, requirement_id: str, **_) -> str:
@@ -244,8 +246,13 @@ class VerifiedByTool(WorkbenchTool):
         req = next((v for v in g.snapshot()["vertices"] if v["eid"] == requirement_id and v["label"] == "Requirement"), None)
         if not req:
             return f"{requirement_id} is not a requirement in the graph."
-        return _dump({"requirement": requirement_id, "text": req["props"].get("text"),
-                      "document": req["props"].get("source_artifact"), "verified_by": g.verified_by(requirement_id)})
+        edges = [e for e in g.snapshot()["edges"] if e["type"] == "TRACES_TO"]
+        return _dump({"requirement": requirement_id, "level": req["props"].get("level") or "software",
+                      "text": req["props"].get("text"), "allocated_to": req["props"].get("subsystem"),
+                      "document": req["props"].get("source_artifact"), "verified_by": g.verified_by(requirement_id),
+                      # software -> system: the higher-level requirements it is derived from, and what derives from it
+                      "traces_to": sorted(e["to_eid"] for e in edges if e["from_eid"] == requirement_id),
+                      "traced_by": sorted(e["from_eid"] for e in edges if e["to_eid"] == requirement_id)})
 
 
 def health_summary(rep: dict) -> dict:

@@ -47,7 +47,14 @@ a2_document_review:
     be stricter; say for each test case MATCHES, STRICTER, WEAKER or UNCLEAR
     and quote both sides. Note test cases whose cited requirement is already
     verified elsewhere, and the subsystem's requirements that remain untested
-    after this document. For an SRS, check every requirement is a single,
+    after this document. A specification states requirements of ONE level,
+    given as requirement_level: an SSS states system requirements (ids
+    SSS-...), an SRS software requirements (ids SRS-...). Say which level this
+    document's requirements are, never mix the two, and report every issue
+    about a requirement of the other level found in it. For an SRS, say which
+    system requirement each software requirement traces to (traces_to) and
+    which have none; for an SSS, which system requirements no software
+    requirement traces to yet (traced_by empty). For an SRS or SSS, check every requirement is a single,
     testable 'shall' with a measurable value, and flag any that is not. Use
     search_documents or verified_by only to confirm something in the
     document against an existing one; cite document ids. Report the tool's

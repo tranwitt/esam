@@ -40,11 +40,12 @@ Answer ONLY from the EVIDENCE provided. Rules:
 - If the evidence does not answer the question, say so. Never invent requirements or values."""
 
 DOC_TYPE_NAMES = {"std": "test description (STD)", "icd": "interface control document (ICD)",
-                  "sdd": "software design description (SDD)", "srs": "software requirements specification (SRS)"}
+                  "sdd": "software design description (SDD)", "srs": "software requirements specification (SRS)",
+                  "sss": "system/subsystem specification (SSS)", "ssdd": "system/subsystem design description (SSDD)"}
 
 
 # A requirement ID as the ontology defines it (classes.Requirement.id_pattern).
-_REQ_ID = re.compile(r"\bSRS-[A-Z0-9]+-0[1-9]\d\b")
+_REQ_ID = re.compile(r"\b(?:SSS|SRS)-[A-Z0-9]+-0[1-9]\d\b")       # SSS-… system, SRS-… software
 
 
 def message_in_question(question: str, messages: set[str]) -> str | None:

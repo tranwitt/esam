@@ -27,6 +27,7 @@ from pathlib import Path
 
 import yaml
 
+from .traceability import _ID, id_prefix, level_of_id, requirement_levels
 from .config import Settings, settings
 from .graphstores.base import GraphStore
 from .ontology import Ontology, check_baseline, default_ontology
@@ -81,13 +82,22 @@ def health_report(graph: GraphStore, onto: Ontology, baseline_data: dict, docume
 
     # 4. Traceability
     reqs = {e for e, v in V.items() if v["label"] == "Requirement"}
-    f4 = [_f(r["eid"], f"no test case verifies it ({r['subsystem']}, {r['document']})", sc(r["subsystem"]))
+    levels = requirement_levels()
+    f4 = [_f(r["eid"], f"{r.get('level') or 'software'} requirement: no test case verifies it "
+                       f"({r['subsystem']}, {r['document']})", sc(r["subsystem"]))
           for r in graph.untested_requirements()]
     for e, v in sorted(V.items()):
         if v["label"] == "TestCase":
             for ref in v["props"].get("verifies", []):
                 if ref not in reqs:
-                    f4.append(_f(e, f"verifies {ref}, which no SRS defines"))
+                    f4.append(_f(e, f"verifies {ref}, which no specification defines"))
+        elif v["label"] == "Requirement":
+            # a parent written as a requirement id (SSS-… / SRS-…) that no document states
+            for ref in v["props"].get("traces_to") or []:
+                for parent in _ID.findall(ref):
+                    if level_of_id(parent, levels) and parent not in reqs:
+                        f4.append(_f(e, f"traces to {parent}, which no {id_prefix(parent).upper()} defines",
+                                     sc(v["props"].get("subsystem"))))
 
     # 5. Integrity (blocks)
     f5 = [_f(x.where, f"baseline vs ontology: {x.message}") for x in

@@ -1,14 +1,30 @@
 """
 Traceability: requirements and test cases as vertices of the graph.
 
-The baseline lists DOCUMENTS. Inside an SRS are the requirements; inside an
-STD are the test cases, each with a `Verifies:` line (SE manual §9). This
-module reads them out, deterministically (no AI), and turns them into:
+The baseline lists DOCUMENTS. Inside a specification are the requirements;
+inside an STD are the test cases, each with a `Verifies:` line (SE manual
+§9). This module reads them out, deterministically (no AI), and turns them
+into:
 
-    Requirement ──SPECIFIED_IN──► DesignArtifact (its SRS)
-    Requirement ──ALLOCATED_TO──► Subsystem      (the SRS's subsystem)
+    Requirement ──SPECIFIED_IN──► DesignArtifact (its SSS or SRS)
+    Requirement ──ALLOCATED_TO──► the document's owner
+    Requirement ──TRACES_TO─────► Requirement    (its parent, from `Traces to:`)
     TestCase    ──SPECIFIED_IN──► DesignArtifact (its STD)
     TestCase    ──VERIFIES──────► Requirement
+
+SYSTEM and SOFTWARE requirements are kept apart. Which one a requirement is
+comes from the kind of document it is stated in, as the ontology says
+(document_types.<type>.requirements), never from its wording:
+
+    SSS  System/Subsystem Specification        level: system     ids SSS-…
+    SRS  Software Requirements Specification   level: software   ids SRS-…
+
+Every Requirement carries `level`. A system requirement is allocated to
+what its SSS is attached to (the vehicle, a system or a subsystem); a
+software requirement to its SRS's subsystem. A software requirement whose
+`Traces to:` names a system requirement gets a TRACES_TO link to it, which
+is how "which system requirements has the software not picked up?" is
+answered.
 
 which answers "which requirements have no test?" and "what verifies
 SRS-BRK-011?" with a graph query instead of a guess.
@@ -19,8 +35,11 @@ contributed: a deleted requirement doesn't linger.
 
 The formats it reads are the ones the manual asks SEs to write:
 
-    - **SRS-BRK-011** The software shall release brake pressure ...
+    - **SSS-LTV-010** The vehicle shall prevent wheel lock-up ...        (in an SSS)
+
+    - **SRS-BRK-011** The software shall release brake pressure ...      (in an SRS)
       (continuation lines indented)
+      Verification: T | Traces to: SSS-LTV-010
 
     ## TC-BRK-011 — Pressure release time on incipient wheel lock-up
     Verifies: SRS-BRK-011.
@@ -70,21 +89,69 @@ def _short(text: str, n: int = 90) -> str:
     return first if len(first) <= n else first[: n - 1].rstrip() + "…"
 
 
-def read_requirements(text: str, artifact_id: str, subsystem: str) -> Extracted:
+DEFAULT_LEVELS = {"sss": "system", "srs": "software"}       # used when the ontology does not say
+
+
+def requirement_levels() -> dict[str, str]:
+    """{document type: level} from the ontology: which documents state
+    requirements, and whether they are system or software requirements."""
+    try:
+        from .ontology import default_ontology
+        return default_ontology().requirement_levels() or dict(DEFAULT_LEVELS)
+    except Exception:
+        return dict(DEFAULT_LEVELS)
+
+
+def id_prefix(requirement_id: str) -> str:
+    return requirement_id.split("-", 1)[0].lower()
+
+
+def level_of_id(requirement_id: str, levels: dict[str, str] | None = None) -> str | None:
+    """The level a requirement id announces (SSS-… system, SRS-… software), or None."""
+    return (levels or requirement_levels()).get(id_prefix(requirement_id))
+
+
+def misplaced_requirements(text: str, doc_type: str, levels: dict[str, str] | None = None) -> list[dict]:
+    """Requirement lines whose id belongs to the OTHER level's document: a
+    system requirement id (SSS-…) written as a requirement in an SRS, or the
+    reverse. They are not read as this document's requirements.
+    [{id, level, belongs_in}]"""
+    levels = levels or requirement_levels()
+    out = []
+    for line in text.splitlines():
+        m = _REQ_LINE.match(line)
+        if m and id_prefix(m["id"]) != doc_type and id_prefix(m["id"]) in levels:
+            out.append({"id": m["id"], "level": levels[id_prefix(m["id"])], "belongs_in": id_prefix(m["id"]).upper()})
+    return out
+
+
+def read_requirements(text: str, artifact_id: str, subsystem: str, level: str = "software",
+                      doc_type: str | None = None, levels: dict[str, str] | None = None) -> Extracted:
+    """The requirements stated in one document, each marked with `level`
+    ("system" for an SSS, "software" for an SRS). `subsystem` is what the
+    document is attached to. With `doc_type` given, a line carrying the other
+    level's id (see misplaced_requirements) is left out: one requirement has
+    one level and one home."""
     out, section, cur = Extracted(), "", None
+    foreign = {p for p in (levels or requirement_levels()) if p != doc_type} if doc_type else set()
 
     def close():
         if cur:
             body = " ".join(cur["lines"]).strip()
             out.vertices.append(Vertex("Requirement", {
-                "id": cur["id"], "name": _short(body), "text": body, "section": cur["section"],
+                "id": cur["id"], "name": _short(body), "text": body, "level": level, "section": cur["section"],
                 "source_artifact": artifact_id, "subsystem": subsystem, **cur["attrs"]}))
             out.edges += [Edge(cur["id"], artifact_id, "SPECIFIED_IN"), Edge(cur["id"], subsystem, "ALLOCATED_TO")]
+            # A parent that is written as a requirement id; kept only if that requirement exists (load_traceability).
+            out.edges += [Edge(cur["id"], parent, "TRACES_TO") for parent in dict.fromkeys(
+                p for ref in cur["attrs"].get("traces_to", []) for p in _ID.findall(ref)) if parent != cur["id"]]
 
     for line in text.splitlines():
         if m := _SECTION.match(line):
             close(); cur = None
             section = m["title"].strip()
+        elif (m := _REQ_LINE.match(line)) and id_prefix(m["id"]) in foreign:
+            close(); cur = None                           # the other level's requirement: not this document's
         elif m := _REQ_LINE.match(line):
             close()
             cur = {"id": m["id"], "lines": [m["text"]], "section": section, "attrs": {}}
@@ -132,9 +199,10 @@ def read_test_cases(text: str, artifact_id: str) -> Extracted:
 
 
 def extract(baseline: Baseline, documents_dir: Path, only: set[str] | None = None) -> Extracted:
-    """Requirements from every SRS and test cases from every STD the baseline lists
-    (or only the artifact ids in `only`)."""
-    out = Extracted()
+    """Requirements from every specification (system requirements from an
+    SSS, software requirements from an SRS) and test cases from every STD the
+    baseline lists (or only the artifact ids in `only`)."""
+    out, levels = Extracted(), requirement_levels()
     for rel, facts in baseline.artifact_index().items():
         if only is not None and facts["artifact_id"] not in only:
             continue
@@ -142,8 +210,9 @@ def extract(baseline: Baseline, documents_dir: Path, only: set[str] | None = Non
         if not path.exists():
             continue
         t = facts["artifact_type"]
-        if t == "srs":
-            part = read_requirements(read_document(path), facts["artifact_id"], facts["subsystem_id"])
+        if t in levels:
+            part = read_requirements(read_document(path), facts["artifact_id"], facts["subsystem_id"],
+                                     levels[t], t, levels)
         elif t == "std":
             part = read_test_cases(read_document(path), facts["artifact_id"])
         else:
@@ -165,10 +234,15 @@ def load_traceability(graph: GraphStore, baseline: Baseline, documents_dir: Path
         graph.remove_derived(src)
     known = ({v.eid for v in baseline.vertices} | {v.eid for v in ex.vertices}
              | graph.existing_ids("Requirement") | graph.existing_ids("DesignArtifact"))
-    edges = [e for e in ex.edges if e.to_eid in known]
+    requirement_ids = {v.eid for v in ex.vertices if v.label == "Requirement"} | graph.existing_ids("Requirement")
+    # TRACES_TO only between requirements: a parent that is a document, a safety function or a typo is not a link.
+    edges = [e for e in ex.edges if e.to_eid in known and (e.type != "TRACES_TO" or e.to_eid in requirement_ids)]
     unresolved = [{"test_case": e.from_eid, "cites": e.to_eid} for e in ex.edges
                   if e.type == "VERIFIES" and e.to_eid not in known]
     graph.load(Baseline(metadata={}, vertices=ex.vertices, edges=edges, artifacts=[]))
+    by_level = lambda level: sum(v.label == "Requirement" and v.props.get("level") == level for v in ex.vertices)  # noqa: E731
     return {"requirements": sum(v.label == "Requirement" for v in ex.vertices),
+            "system_requirements": by_level("system"), "software_requirements": by_level("software"),
+            "traces": sum(e.type == "TRACES_TO" for e in edges),
             "test_cases": sum(v.label == "TestCase" for v in ex.vertices),
             "verifies": sum(e.type == "VERIFIES" for e in edges), "unresolved": unresolved}
