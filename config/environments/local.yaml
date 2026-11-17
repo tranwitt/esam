@@ -76,6 +76,8 @@ embeddings:
 documents:
   diagrams: auto                       # auto (vision model if one is set above, else local text) | local | off
   diagrams_env: ESAM_DIAGRAMS
+  diagram_baseline: off                # off | propose | apply: read the systems and subsystems a picture
+  diagram_baseline_env: ESAM_DIAGRAM_BASELINE   # diagram shows into the vehicle baseline (as candidates for an SE)
 
 database:                              # PostgreSQL: vectors, graph tables, run log, usage
   backend: postgres                    # postgres | none

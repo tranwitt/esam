@@ -28,6 +28,7 @@ SE approves, that markdown. On ingest the markdown goes to data/documents/
 and the file as delivered is kept next to it in data/documents/originals/.
 """
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -39,6 +40,7 @@ from .config import Settings, settings as default_settings
 from .embedders.base import Embedder
 from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
+from .diagram_baseline import DiagramBaselineError
 from .ontology import Ontology, check_baseline, find_node, part_sets
 from .readers import PICTURES, convert
 from .traceability import (_ID, LEVELS, classification_rules, id_for, id_parts, load_traceability, read_requirements,
@@ -51,27 +53,58 @@ _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
 
 _OWNER_COLUMNS = ("subsystem", "system", "vehicle", "attached to", "attached_to")
 _REQ_ID = re.compile(r"^((SYS|SW)-)?SRS-[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
-ORIGINALS = "originals"       # data/documents/originals/: Word and picture files as they were delivered
+ORIGINALS = "originals"
+
+
+def diagram_baseline_mode(s: Settings = default_settings, override: str | None = None) -> str:
+    from .diagram_baseline import mode_of
+    return mode_of(s, override)
+
+
+def baseline_proposal(pictures: list, s: Settings, document: str) -> dict:
+    from .diagram_baseline import for_document
+    return for_document(pictures, s, document)
+
+
+def apply_baseline_proposal(proposal: dict, baseline_yaml: Path) -> dict:
+    from .diagram_baseline import apply
+    return apply(proposal, baseline_yaml)
+
+
+def revert_baseline_additions(record: dict | None, baseline_yaml: Path) -> dict:
+    from .diagram_baseline import revert
+    return revert(record, baseline_yaml)       # data/documents/originals/: Word and picture files as they were delivered
 
 
 # ── Before A1: whatever arrived becomes markdown ─────────────────────────────
 
-def receive(path: Path, incoming: Path, s: Settings = default_settings, overrides: dict | None = None) -> dict:
+def receive(path: Path, incoming: Path, s: Settings = default_settings, overrides: dict | None = None,
+            diagram_baseline: str | None = None) -> dict:
     """Read an arriving file and put the markdown the pipeline will review in
     `incoming/<ID>.md`. A file that was not plain markdown is also kept as it
     came, in `incoming/original/`. `overrides` are fields the SE supplies
     (id, name, type, revision, attached_to) for what the document does not
     state: a picture states nothing, so it needs at least id.
 
-    Returns {"entry", "document", "original", "conversion"}; entry has no
-    "id" when the document does not say what it is."""
+    With `diagram_baseline` (or ESAM_DIAGRAM_BASELINE) at "propose" or
+    "apply", the document's pictures are also analysed for the systems and
+    subsystems they show, and what the baseline lacks is returned as
+    "baseline_proposal" (esamkit/diagram_baseline.py) and saved as
+    `incoming/baseline_proposal.json`. Nothing is changed here: "apply" takes
+    effect when the document is ingested.
+
+    Returns {"entry", "document", "original", "conversion",
+    "diagram_baseline", "baseline_proposal"}; entry has no "id" when the
+    document does not say what it is."""
     overrides = overrides or {}
     title = None
     if path.suffix.lower() in PICTURES and overrides.get("id"):
         title = f"{overrides['id']} — {overrides.get('name') or path.stem}"
     conv = convert(path, s, diagrams=True, title=title)
     entry = {**read_header(conv.text), **overrides}
-    out = {"entry": entry, "document": None, "original": None, "conversion": None}
+    mode = diagram_baseline_mode(s, diagram_baseline)
+    out = {"entry": entry, "document": None, "original": None, "conversion": None,
+           "diagram_baseline": mode, "baseline_proposal": None}
     if not entry.get("id"):
         return out
     entry["file"] = f"{entry['id']}.md"
@@ -85,6 +118,9 @@ def receive(path: Path, incoming: Path, s: Settings = default_settings, override
     else:
         shutil.copy2(path, incoming / entry["file"])
     out["document"] = f"{incoming.name}/{entry['file']}"
+    if mode != "off" and conv.pictures:
+        out["baseline_proposal"] = baseline_proposal(conv.pictures, s, entry["id"])
+        (incoming / "baseline_proposal.json").write_text(json.dumps(out["baseline_proposal"], indent=1, ensure_ascii=False))
     return out
 
 
@@ -326,15 +362,20 @@ def _original_files(s: Settings, doc_id: str) -> list[Path]:
 
 
 def ingest(source: Path, entry: dict, emb: Embedder, store: VectorStore, graph: GraphStore,
-           backup_dir: Path, s: Settings = default_settings, original: Path | None = None) -> dict:
+           backup_dir: Path, s: Settings = default_settings, original: Path | None = None,
+           baseline_proposal: dict | None = None) -> dict:
     """Put the document into the baseline and both stores. Returns the
     manifest `undo` needs. A new revision replaces the old file and line
     (both kept in `backup_dir`). `source` is the markdown; `original` is the
     Word or picture file it was converted from, if any, kept as
-    data/documents/originals/<ID>.<ext>."""
+    data/documents/originals/<ID>.<ext>. `baseline_proposal` (from
+    `receive`, diagram baseline mode "apply") adds the systems and
+    subsystems its diagrams show to the baseline, as candidates; if they
+    cannot be added the document is still ingested and the manifest says why."""
     target = s.documents_dir / entry["file"]
     manifest: dict = {"entry": entry, "file": str(target), "line": baseline_line(entry),
-                      "previous_file": None, "previous_line": None, "original": None, "previous_originals": []}
+                      "previous_file": None, "previous_line": None, "original": None, "previous_originals": [],
+                      "baseline_additions": None}
     backup_dir.mkdir(parents=True, exist_ok=True)
     if target.exists():
         manifest["previous_file"] = str(backup_dir / target.name)
@@ -354,6 +395,11 @@ def ingest(source: Path, entry: dict, emb: Embedder, store: VectorStore, graph: 
         manifest["previous_line"] = old
         _remove_line(s.baseline_yaml, old)
     _append_artifact(s.baseline_yaml, manifest["line"])
+    if baseline_proposal and baseline_proposal.get("additions"):
+        try:
+            manifest["baseline_additions"] = apply_baseline_proposal(baseline_proposal, s.baseline_yaml)
+        except DiagramBaselineError as e:
+            manifest["baseline_additions"] = {"applied": [], "blocks": [], "error": str(e)}
     shutil.copy2(source, target)
     facts = load_baseline(s.baseline_yaml).artifact_index()[entry["file"]]
     manifest["chunks"], manifest["chunks_replaced"] = ingest_file(target, entry["file"], facts, emb, store, s)
@@ -367,6 +413,7 @@ def undo(manifest: dict, store: VectorStore, graph: GraphStore, emb: Embedder | 
     A replaced revision comes back (re-embedded, so `emb` is needed then)."""
     entry, target = manifest["entry"], Path(manifest["file"])
     removed_line = _remove_line(s.baseline_yaml, manifest["line"])
+    candidates = revert_baseline_additions(manifest.get("baseline_additions"), s.baseline_yaml)
     removed_chunks = store.delete_source(entry["file"])
     target.unlink(missing_ok=True)
     if manifest.get("original"):
@@ -383,6 +430,8 @@ def undo(manifest: dict, store: VectorStore, graph: GraphStore, emb: Embedder | 
         facts = load_baseline(s.baseline_yaml).artifact_index()[entry["file"]]
         ingest_file(target, entry["file"], facts, emb, store, s)
     return {"baseline_line_removed": removed_line, "chunks_removed": removed_chunks,
+            "baseline_candidates_removed": candidates["reverted"], "baseline_candidates_kept": candidates["kept"],
+            **({"baseline_candidates_note": candidates["why"]} if candidates.get("why") else {}),
             "previous_revision_restored": bool(manifest.get("previous_file")),
             "traceability": reload_graph(graph, s)}
 
@@ -432,6 +481,12 @@ def verify_ingestion(entry: dict, review: dict, manifest: dict, emb: Embedder, s
     hits = store.search(emb.embed_query(entry.get("name", aid)), k=3)
     found = [h.chunk.artifact_id for h in hits]
     check("search by title finds it", aid in found, aid, found)
+    added = (manifest.get("baseline_additions") or {}).get("applied") or []
+    if added:
+        in_graph = {v["eid"] for v in graph.snapshot()["vertices"]
+                    if v["label"] in ("System", "Subsystem") and v["props"].get("status") == "candidate"}
+        check("systems and subsystems from the diagrams are in the graph as candidates",
+              set(added) <= in_graph, sorted(added), sorted(set(added) & in_graph))
     integrity = next(c for c in health_after["checks"] if c["id"] == 5)
     check("integrity (health check 5)", integrity["status"] == "pass", "pass",
           integrity["status"] if integrity["status"] == "pass" else [f["message"] for f in integrity["findings"]])

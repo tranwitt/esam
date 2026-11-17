@@ -79,7 +79,7 @@ class Baseline:
 
 # Optional subsystem / function fields copied onto the vertex when present.
 _SUB_FIELDS = ("safety_critical", "safety_classification", "os_class", "aliases",
-               "j1939_source_address", "tsn_profile", "repo_url", "jira_component")
+               "j1939_source_address", "tsn_profile", "repo_url", "jira_component", "status", "derived_from")
 
 
 def load_baseline(path: Path) -> Baseline:
@@ -101,8 +101,10 @@ def load_baseline(path: Path) -> Baseline:
             add("Variant", {"id": var["id"], "name": var["name"], "wbs_code": var["wbs_code"],
                             "role": var.get("role", "variant")}, fam["id"])
             for sysm in var.get("systems", []):
-                add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm["wbs_code"],
-                               "universality": sysm.get("universality", "universal")}, var["id"])
+                # A candidate system (read from a diagram, awaiting an SE) may not have its WBS code yet.
+                add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm.get("wbs_code", ""),
+                               "universality": sysm.get("universality", "universal"),
+                               **{k: sysm[k] for k in ("status", "derived_from") if k in sysm}}, var["id"])
                 for sub in sysm.get("subsystems", []):
                     # No invented WBS code for subsystems (the old script made up
                     # "<system>.sub"). A subsystem's WBS code is its System's,

@@ -80,6 +80,11 @@ def health_report(graph: GraphStore, onto: Ontology, baseline_data: dict, docume
     f3 = [_f(f"{e['from_eid']} → {e['to_eid']}", f"{e['props'].get('message') or 'interface'} link is a candidate"
              + (f": {e['props']['notes']}" if e["props"].get("notes") else ""), sc(e["from_eid"]) or sc(e["to_eid"]))
           for e in ifaces if e["props"].get("status") == "candidate"]
+    # systems and subsystems added from a diagram, not yet confirmed by an SE
+    f3 += [_f(e, f"{v['label'].lower()} {v['props'].get('name', '')!r} is a candidate"
+                 + (f", read from {v['props']['derived_from']}" if v["props"].get("derived_from") else "")
+                 + ": check it, complete its attributes and remove 'status: candidate'", sc(e))
+           for e, v in sorted(V.items()) if v["label"] in ("System", "Subsystem") and v["props"].get("status") == "candidate"]
 
     # 4. Traceability
     reqs = {e for e, v in V.items() if v["label"] == "Requirement"}

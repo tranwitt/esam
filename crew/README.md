@@ -165,6 +165,46 @@ What the document must state (SE manual §2.5): a title line `# <ID> — <name>`
 `| Document | Type | Revision | Subsystem |`. Missing fields are ontology findings; the SE can supply them
 with `--set revision=A --set attached_to=SUB-…`.
 
+**Populating the vehicle baseline from a diagram.** An architecture or block diagram shows which systems the vehicle
+has and which subsystems sit in each. As an option, a picture that is ingested (a picture file, or one inside a Word
+document) is also analysed for that, and what the baseline lacks is proposed or added:
+
+| Mode | What happens |
+|---|---|
+| `off` (default) | Pictures are only described, as before |
+| `propose` | The systems and subsystems the diagram shows that the baseline lacks are listed in the review (and in the run's `baseline_proposal.md`). Nothing is changed |
+| `apply` | As `propose`; when the SE approves the run they are written to the baseline as candidates. `undo` takes them out again |
+
+```bash
+python -m crew.main review architecture.png --set id=SSDD-LTV-002 --set name="Vehicle architecture" \
+       --set revision=A --set attached_to=V-001 --diagram-baseline propose
+python -m crew.main approve <run> --apply-baseline        # add what a propose run listed
+python -m crew.main approve <run> --no-apply-baseline     # ingest only, whatever the mode was
+python -m esamkit.diagram_baseline architecture.png       # the proposal for one file, outside a pipeline (--apply to write it)
+```
+
+Set it per run with `--diagram-baseline`, or as the default with `ESAM_DIAGRAM_BASELINE` in `.env`
+(`documents.diagram_baseline` in a profile). What to expect:
+
+- **It uses the vision model**, with one more call per picture than a description, and only under the same
+  conditions: `ESAM_VISION_MODEL` set and `ESAM_DIAGRAMS=auto`. Otherwise nothing is sent and the review says the
+  picture was not analysed.
+- **Existing entries are never changed.** The model is given the baseline's systems and subsystems; a name the
+  picture shows that matches one by id, name or alias is left alone. A subsystem the picture puts under a
+  different system than the baseline is reported, not moved.
+- **Additions are candidates.** Each gets an id in the ontology's form (`SYS-…`, `SUB-…`), `status: candidate` and
+  `derived_from: "<document> picture <n> (<file>)"`. The health report lists them under *Awaiting SE review* until
+  an SE checks them and deletes the `status` line.
+- **ESAM does not invent what the picture does not say.** A new system gets a WBS code only if the picture prints
+  one (a candidate without it is a warning, for the SE to fill in). A new subsystem is written
+  `safety_critical: true` unless the picture says otherwise, so an unreviewed unit is held to the stricter rules
+  until an SE decides. A subsystem the picture does not place in a system is listed, not added.
+- **The file stays yours.** Entries are inserted as text where they belong; no existing line moves. If the result
+  would not load or would fail the ontology check, the baseline is left exactly as it was and the document is
+  still ingested.
+- The document itself must be attached to something already in the baseline: it cannot be attached to a
+  subsystem its own diagram proposes.
+
 **Several documents of one type; documents in parts.** A subsystem (or the vehicle, for an SSDD) may have more
 than one document of a type. Each is its own baseline entry with its own id (`SSDD-LTV-001`, `SSDD-LTV-002`, …;
 ids run 001–009 per type and owner code) and is reviewed, approved, ingested and undone on its own: a document

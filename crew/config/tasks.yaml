@@ -56,7 +56,14 @@ a2_document_review:
     line or its wording, giving the id it should have, and every id that
     is not an SRS- id. Say which system requirement each software
     requirement traces to (traces_to), and which system requirements no
-    software requirement traces to (traced_by empty). Check every requirement is a single,
+    software requirement traces to (traced_by empty). If review_document returns baseline_from_diagrams, the
+    document's diagrams were analysed for the vehicle baseline: list every
+    system and subsystem it would add (id, name, where it goes, which picture)
+    and what an SE still has to supply for each, say whether they will be
+    added on approval (added_on_approval), and name anything not proposed and
+    why. Judge each addition against the picture's description: question a
+    name that looks like a signal, a function or a duplicate of an existing
+    entry. They are candidates for the SE to confirm, never facts. Check every requirement is a single,
     testable 'shall' with a measurable value, and flag any that is not. Use
     search_documents or verified_by only to confirm something in the
     document against an existing one; cite document ids. Report the tool's

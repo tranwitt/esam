@@ -57,6 +57,7 @@ esam/
 │   ├── word_docx.py, word_doc.py, docmodel.py   built-in Word readers (.docx and legacy .doc), no dependencies
 │   ├── office.py             optional LibreOffice conversion for .doc / .rtf
 │   ├── diagrams.py           picture diagrams -> searchable text (vision model, SVG labels, OCR)
+│   ├── diagram_baseline.py   optional: the systems and subsystems a diagram shows -> baseline candidates
 │   ├── embedders/
 │   │   ├── base.py           Embedder interface (embed_documents / embed_query)
 │   │   ├── local_st.py       sentence-transformers, from local folder, offline
@@ -185,6 +186,11 @@ markdown, so it is chunked, embedded and searchable with its section. `ESAM_DIAG
 `auto` (a vision model describes it **if** `ESAM_VISION_MODEL` is set; results are cached by picture
 content), `local` (never sent to a model: SVG labels, text typed in Word shapes, OCR if `tesseract` is
 installed), `off` (name and caption only). With no vision model configured, no picture leaves the machine.
+
+A diagram can also **populate the vehicle baseline**: with `ESAM_DIAGRAM_BASELINE=propose` (or `--diagram-baseline
+propose` on a review) the systems and subsystems a picture shows that the baseline lacks are listed for the SE;
+with `apply` they are added on ingest as `status: candidate` entries. Off by default. See `crew/README.md`,
+"Populating the vehicle baseline from a diagram".
 
 What a Word document must contain to be recognised is the same as for markdown: a title
 `<ID> — <name>` (Title or Heading 1 style) and the `Document | Type | Revision | Subsystem` table.

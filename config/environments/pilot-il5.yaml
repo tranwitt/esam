@@ -55,6 +55,8 @@ embeddings:
 documents:
   diagrams: local                        # local = no picture is sent to a model (SVG text, OCR only).
   diagrams_env: ESAM_DIAGRAMS            # auto in .env AND ESAM_VISION_MODEL set = the vision role describes them
+  diagram_baseline: off                # off | propose | apply: read the systems and subsystems a picture
+  diagram_baseline_env: ESAM_DIAGRAM_BASELINE   # diagram shows into the vehicle baseline (as candidates for an SE)
 
 database:
   backend: postgres

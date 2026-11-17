@@ -56,6 +56,7 @@ class Converted:
     figures: list[dict] = field(default_factory=list)     # one record per picture (diagrams.figure_block)
     notes: list[str] = field(default_factory=list)        # what was lost or assumed
     changed: bool = True                    # False: `text` is exactly the file's own text
+    pictures: list = field(default_factory=list, repr=False)      # the Picture objects, in order (not part of report())
 
     def report(self) -> dict:
         """What the intake review shows the SE about the conversion."""
@@ -101,11 +102,12 @@ class _Figures:
     """Numbers the pictures of one document and collects their records."""
 
     def __init__(self, s: Settings, describe: bool):
-        self.s, self.mode, self.records = s, (None if describe else "off"), []
+        self.s, self.mode, self.records, self.pictures = s, (None if describe else "off"), [], []
 
     def __call__(self, pic: Picture, n: int) -> str:
         text, info = _diagrams.figure_block(pic, n, self.s, self.mode)
         self.records.append(info)
+        self.pictures.append(pic)
         return text
 
 
@@ -186,15 +188,16 @@ def convert(path: Path, s: Settings = default_settings, diagrams: bool = True, t
         original = data.decode("utf-8-sig", "replace")
         text = _markdown(original, path.parent, s, figures) if path.suffix.lower() != ".txt" else original
         return Converted(text, "text" if path.suffix.lower() == ".txt" else "markdown", "read as it is",
-                         figures.records, [], changed=text != original or original.encode() != data)
+                         figures.records, [], changed=text != original or original.encode() != data,
+                         pictures=figures.pictures)
     if kind == "picture":
         block = figures(Picture(path.name, data), 1)
         return Converted(f"# {title or path.stem}\n\n{block}\n", "picture", "a picture read as a one-figure document",
-                         figures.records, [])
+                         figures.records, [], pictures=figures.pictures)
     text, how, notes = _word(data, kind, s, figures)
     if not text.strip():
         raise UnsupportedDocument(f"{path.name}: no text could be read from this {kind} file")
-    return Converted(text, kind, how, figures.records, notes)
+    return Converted(text, kind, how, figures.records, notes, pictures=figures.pictures)
 
 
 def read_document(path: Path, s: Settings = default_settings, diagrams: bool = False) -> str:

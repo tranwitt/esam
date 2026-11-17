@@ -215,9 +215,11 @@ def _check_node(onto: Ontology, cname: str, node: dict, parent: dict | None, see
                                                "(misspelt? or add it to the ontology)"))
             continue
         out += _check_value(onto, eid, key, value, attrs[key])
+    candidate = node.get("status") == "candidate"          # read from a diagram, awaiting an SE
     for key, spec in attrs.items():
         if spec.get("required") and key not in node:
-            out.append(Finding("error", eid, f"required attribute {key!r} is missing"))
+            out.append(Finding("warning", eid, f"candidate: required attribute {key!r} is still to be given by an SE")
+                       if candidate else Finding("error", eid, f"required attribute {key!r} is missing"))
 
     # WBS codes must nest: a child's code extends its parent's. MIL-STD-881
     # writes the Level 1 root as "1.0", and its children as "1.1", "1.2", ...

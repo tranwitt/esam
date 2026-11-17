@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.11"
+  version: "0.12"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -112,6 +112,12 @@ classes:
     attributes:
       wbs_code: { type: wbs, required: true }
       universality: { type: enum, values: universality }
+      # Set by ESAM when it adds this entry from a diagram (esamkit/diagram_baseline.py).
+      # `candidate` = proposed by a tool, awaiting an SE: a required attribute the diagram
+      # could not give may still be missing (a warning, not an error). When you have
+      # checked the entry, fill those in and delete the `status` line (or set confirmed).
+      status: { type: enum, values: link_status, description: "candidate = read from a diagram, not yet reviewed by an SE" }
+      derived_from: { type: text, description: "The document and picture a candidate was read from" }
   Subsystem:
     description: "A unit inside a system that has its own design, documents and interfaces, e.g. the Brake Control ECU."
     id_pattern: '^SUB-[A-Z0-9-]+$'
@@ -125,6 +131,12 @@ classes:
       tsn_profile: { type: text }
       repo_url: { type: text }
       jira_component: { type: text }
+      # Set by ESAM when it adds this entry from a diagram (esamkit/diagram_baseline.py).
+      # `candidate` = proposed by a tool, awaiting an SE: a required attribute the diagram
+      # could not give may still be missing (a warning, not an error). When you have
+      # checked the entry, fill those in and delete the `status` line (or set confirmed).
+      status: { type: enum, values: link_status, description: "candidate = read from a diagram, not yet reviewed by an SE" }
+      derived_from: { type: text, description: "The document and picture a candidate was read from" }
   Function:
     description: "Something a subsystem does, e.g. wheel-slip regulation."
     id_pattern: '^FN-[A-Z0-9-]+$'

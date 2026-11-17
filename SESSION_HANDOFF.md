@@ -80,6 +80,15 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `level` column. Tasks `b2_draft_srs` / `b3_verify_srs` tell the agents the two id forms. The reference draft is
   `SW-SRS-ENG-0NN` plus one `SYS-SRS-ENG-040`. NOT run: a real `author` run (no CrewAI or model here), so whether
   the model follows the new id instructions is unverified; the SQL is unverified as before.
+- **Baseline from diagrams** (ontology v0.12): `esamkit/diagram_baseline.py`, modes off | propose | apply via
+  `ESAM_DIAGRAM_BASELINE`, `documents.diagram_baseline`, `review --diagram-baseline`, `approve --[no-]apply-baseline`.
+  New ontology attributes `status` / `derived_from` on System and Subsystem; a candidate's missing required attribute
+  is a warning; the loader accepts a System without `wbs_code`; health check 3 lists candidates. `intake.receive`
+  returns `baseline_proposal`; `ingest(baseline_proposal=…)` applies it; `undo` reverts it when untouched. Tests:
+  `tests/test_diagram_baseline.py` (fake vision endpoint returning JSON). NOT verified: a real vision model's
+  reading of a real diagram (quality of the extraction is the model's), the crew wiring (`crew/main.py`,
+  `IngestDocumentTool`) which needs CrewAI, and the Cockpit, which shows candidates only through the health panel
+  and a node's properties.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

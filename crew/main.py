@@ -30,6 +30,10 @@ ESAM crew runner.
     # The graph (derived from the baseline and its documents): rebuild or empty it. No agent, no model.
     python -m crew.main graph status | reload | reset --yes
 
+    # Picture diagrams can also populate the vehicle baseline: the systems and subsystems a diagram shows
+    python -m crew.main review architecture.png --set id=SSDD-LTV-002 ... --diagram-baseline propose   # list them
+    python -m crew.main review architecture.png --set id=SSDD-LTV-002 ... --diagram-baseline apply     # add on approval
+
     # Interactive: a question answered by the three agents
     python -m crew.main ask "Which brake requirements have no test?"
 
@@ -213,7 +217,8 @@ def review_one(path: Path, args) -> int:
     # agents review and the SE approves.
     with tempfile.TemporaryDirectory(prefix="esam-incoming-") as tmp:
         try:
-            got = receive(path, Path(tmp) / "incoming", settings_for(load_profile(args.env)), _parse_sets(args.set))
+            got = receive(path, Path(tmp) / "incoming", settings_for(load_profile(args.env)), _parse_sets(args.set),
+                          diagram_baseline=getattr(args, "diagram_baseline", None))
         except UnsupportedDocument as e:
             print(f"{path.name}: {e}")
             return 1
@@ -236,6 +241,23 @@ def review_one(path: Path, args) -> int:
               f"{len(got['conversion']['pictures'])} picture(s). The review is of {folder / got['document']}.")
         for line in conversion_attention(got["conversion"])[1:]:
             print(f"  {line}")
+    if got["diagram_baseline"] != "off":
+        # The systems and subsystems the document's diagrams show (esamkit/diagram_baseline.py). "apply" adds
+        # them to the baseline when the SE approves the run; "propose" only reports them.
+        from esamkit.diagram_baseline import summary as proposal_summary
+        lines = proposal_summary(got["baseline_proposal"]) or ["The document has no pictures to analyse."]
+        state["diagram_baseline"] = {"mode": got["diagram_baseline"], "apply": got["diagram_baseline"] == "apply",
+                                     "proposal": got["baseline_proposal"], "summary": lines}
+        on_approval = ("On approval they are added to the baseline as candidates (python -m crew.main approve <run> "
+                       "--no-apply-baseline to leave the baseline alone)." if got["diagram_baseline"] == "apply" else
+                       "Nothing will be added (mode: propose). To add them on approval: approve <run> --apply-baseline.")
+        (folder / "baseline_proposal.md").write_text(
+            f"# Systems and subsystems read from the diagrams of {entry['id']}\n\n" + "\n".join(lines) + f"\n\n{on_approval}\n")
+        print("Diagram analysis for the vehicle baseline:")
+        for line in lines:
+            print(f"  {line}")
+        if (got["baseline_proposal"] or {}).get("additions"):
+            print(f"  {on_approval}")
     wb = _workbench(profile, folder, state)
     wb.save()
     print(f"Run {run_id}: reviewing {entry['id']} (usage → {ledger.sink})")
@@ -301,6 +323,15 @@ def cmd_approve(args) -> int:
     check_tools(crew, "ingest")
     state["approval"] = {"decision": "approved", "by": args.by, "at": _now(), "note": args.note,
                          "against_recommendation": state.get("recommendation") != "INGEST"}
+    if getattr(args, "apply_baseline", None) is not None:        # the SE's choice overrides the run's mode
+        if args.apply_baseline and not state.get("diagram_baseline"):
+            sys.exit("--apply-baseline: this run did not analyse its diagrams. Review the document again with "
+                     "--diagram-baseline propose (or apply).")
+        if state.get("diagram_baseline"):
+            state["diagram_baseline"]["apply"] = bool(args.apply_baseline)
+    if (state.get("diagram_baseline") or {}).get("apply"):
+        state["approval"]["baseline_additions_approved"] = [
+            a["id"] for a in (state["diagram_baseline"].get("proposal") or {}).get("additions") or []]
     wb = _workbench(profile, folder, state)
     wb.save()
     entry = state["entry"]
@@ -562,6 +593,10 @@ def main() -> None:
             p.add_argument("file")
         p.add_argument("--set", action="append", metavar="KEY=VALUE",
                        help="supply a field the document doesn't state (revision=A, attached_to=SUB-...)")
+        p.add_argument("--diagram-baseline", choices=["off", "propose", "apply"], default=None,
+                       help="analyse the document's picture diagrams for systems and subsystems: propose = list what "
+                            "the baseline lacks; apply = also add them, as candidates, when the run is approved "
+                            "(default: ESAM_DIAGRAM_BASELINE / the profile's documents.diagram_baseline, normally off)")
     add("runs", cmd_runs, "list pipeline runs", env=False)
     for name, fn in (("approve", cmd_approve), ("reject", cmd_reject), ("undo", cmd_undo)):
         p = add(name, fn, f"{name} a run")
@@ -570,6 +605,10 @@ def main() -> None:
         p.add_argument("--note", default="", required=(name == "reject"))
         if name == "approve":
             p.add_argument("--against-recommendation", action="store_true")
+            p.add_argument("--apply-baseline", dest="apply_baseline", action="store_true", default=None,
+                           help="add the systems and subsystems the run read from the diagrams to the baseline")
+            p.add_argument("--no-apply-baseline", dest="apply_baseline", action="store_false",
+                           help="ingest the document but leave the vehicle baseline's structure alone")
     tk = add("tasks", cmd_tasks, "the task list: add, list, show, cancel, requeue")
     tk.add_argument("action", choices=["add", "list", "show", "cancel", "requeue"])
     tk.add_argument("rest", nargs="*", help="add: <kind> <file | brief | run id | question>;  show/cancel/requeue: <task id>")

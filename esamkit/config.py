@@ -231,6 +231,16 @@ class Settings:
     #   local  never send a picture to a model: local text extraction only
     #   off    keep only the figure's name and caption
     diagrams: str = os.getenv("ESAM_DIAGRAMS", "auto")
+    # Reading STRUCTURE out of a picture diagram into the vehicle baseline
+    # (esamkit/diagram_baseline.py): the systems and subsystems it shows.
+    #   off      (default) pictures are only described, as above
+    #   propose  the diagram is analysed and the systems / subsystems the
+    #            baseline lacks are listed for the SE; nothing is changed
+    #   apply    as propose, and when the document is ingested they are
+    #            added to the baseline as `status: candidate` entries
+    # Needs the vision model, like a description does; the analysis is a
+    # second call per picture. An SE confirms every candidate.
+    diagram_baseline: str = os.getenv("ESAM_DIAGRAM_BASELINE", "off") or "off"
     # The model that looks at pictures. No model = no picture leaves this
     # machine. URL, key and API default to the chat model's.
     vision_model: str = os.getenv("ESAM_VISION_MODEL", "")

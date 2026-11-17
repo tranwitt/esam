@@ -264,6 +264,7 @@ def settings_for(profile: dict, base: Settings = default_settings) -> Settings:
         pg_dsn=r["dsn"] or base.pg_dsn,
         graph_backend=graph.get("backend", base.graph_backend),
         diagrams=_pick(profile.get("documents") or {}, "diagrams") or base.diagrams,
+        diagram_baseline=_pick(profile.get("documents") or {}, "diagram_baseline") or base.diagram_baseline,
     )
     if reasoning:
         p = reasoning[0]

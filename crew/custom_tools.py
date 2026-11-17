@@ -298,7 +298,9 @@ class ReviewDocumentTool(WorkbenchTool):
                         "description every test case with its method, pass criteria and the TEXT of each "
                         "requirement it verifies; for an SRS every requirement. Lists the issues found. If the "
                         "document arrived as a Word file or a picture, also how it was converted to markdown, "
-                        "every picture with its description, and what the SE must check against the original. "
+                        "every picture with its description, and what the SE must check against the original; and, "
+                        "when its diagrams were analysed for the vehicle baseline, the systems and subsystems they "
+                        "show that the baseline lacks (baseline_from_diagrams). "
                         "Takes no input.")
 
     def _call(self, **_) -> str:
@@ -307,12 +309,21 @@ class ReviewDocumentTool(WorkbenchTool):
         res = review_document(wb.document_text(), wb.state["entry"], wb.graph, wb.s)
         wb.state["review"] = res
         wb.save()
+        extra = {}
+        db = wb.state.get("diagram_baseline")
+        if db:                                # the diagrams were analysed for systems and subsystems
+            prop = db.get("proposal") or {}
+            extra["baseline_from_diagrams"] = {
+                "mode": db["mode"], "added_on_approval": bool(db.get("apply")), "summary": db.get("summary") or [],
+                "additions": [{k: a.get(k) for k in ("class", "id", "name", "parent", "from", "needs", "evidence")}
+                              for a in prop.get("additions") or []],
+                "already_present": prop.get("already_present") or [], "not_added": prop.get("not_added") or []}
         if wb.state.get("conversion"):       # a Word or picture source: what the SE must check by eye
             from esamkit.intake import conversion_attention
-            return _dump({**res, "converted_from": wb.state["conversion"]["from"],
+            return _dump({**res, **extra, "converted_from": wb.state["conversion"]["from"],
                           "conversion": wb.state["conversion"],
                           "conversion_attention": conversion_attention(wb.state["conversion"])})
-        return _dump(res)
+        return _dump({**res, **extra})
 
 
 class IngestDocumentTool(WorkbenchTool):
@@ -336,8 +347,18 @@ class IngestDocumentTool(WorkbenchTool):
         wb.state["health_before"] = report_for(wb.graph, wb.s)
         wb.state["review"] = review_document(wb.document_text(), wb.state["entry"], wb.graph, wb.s)
         original = wb.folder / wb.state["original"] if wb.state.get("original") else None
+        proposal = None
+        db = wb.state.get("diagram_baseline") or {}
+        if db.get("apply") and original is not None:
+            # Made again against the baseline as it is NOW (it may have moved on since the review); the model's
+            # answer for an unchanged baseline comes from the cache.
+            from esamkit.diagram_baseline import for_document
+            from esamkit.readers import convert
+            proposal = for_document(convert(original, wb.s, diagrams=False).pictures, wb.s, wb.state["entry"]["id"], wb.onto)
+            approved = set((wb.state.get("approval") or {}).get("baseline_additions_approved") or [])
+            proposal["additions"] = [a for a in proposal["additions"] if a["id"] in approved]   # only what the SE saw
         manifest = ingest(wb.folder / wb.state["document"], wb.state["entry"], wb.emb, wb.store, wb.graph,
-                          wb.folder / "replaced", wb.s, original=original)
+                          wb.folder / "replaced", wb.s, original=original, baseline_proposal=proposal)
         (wb.folder / "manifest.json").write_text(_dump(manifest))
         wb.state["state"] = "ingested"
         wb.save()
