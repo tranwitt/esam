@@ -92,16 +92,16 @@ Jot notes per lesson as you go, anywhere you like. A simple option is a file nex
 mkdir -p notes && $EDITOR notes/lesson01.md
 ```
 
-## 6. When you're ready for a session with Claude
+## 6. When you're ready for a session with an AI coding assistant
 
-Open Claude Code in the **parent** folder (that's where the project memory lives):
+Open your AI coding assistant in the **parent** folder (that's where the project memory lives):
 
 ```bash
 cd /home/dev/Documents/kirahi/aidev
-claude
+# then start your assistant's command-line tool here
 ```
 
-Claude has a reminder to ask for your **Lesson 01 notes** first. Paste them, or say where the file
+The assistant has a reminder to ask for your **Lesson 01 notes** first. Paste them, or say where the file
 is (e.g. `esam/notes/lesson01.md`). Status, credentials and pending tasks are all in
 `SESSION_HANDOFF.md` if you need them.
 

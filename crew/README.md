@@ -1,6 +1,6 @@
 # ESAM crew (CrewAI)
 
-Runs ESAM work without a Claude session: an environment check, then pipelines of three agents
+Runs ESAM work without an interactive AI assistant session: an environment check, then pipelines of three agents
 (Triage → Researcher/Author → SE Reviewer) that use **only** tested `esamkit` functions as tools.
 Same 5-file structure as the RTOS crew (`aidev/crew/`): `main.py`, `crew.py`, `custom_tools.py`,
 `config/agents.yaml`, `config/tasks.yaml`.
