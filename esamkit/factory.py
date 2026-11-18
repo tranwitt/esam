@@ -14,8 +14,10 @@ the local Docker database to the pilot's VM-1 is just:
 
 The embedding model is chosen the same way, by MODEL and URL:
 
-    ESAM_EMBED_MODEL=<model>                 # which model
-    ESAM_EMBED_BASE_URL=https://<host>/v1    # where it runs; unset = locally, from disk
+    # which model
+    ESAM_EMBED_MODEL=<model>
+    # where it runs; unset = locally, from disk
+    ESAM_EMBED_BASE_URL=https://<host>/v1
 
 Adding another vector database later = one new class implementing
 VectorStore (vectorstores/base.py) + one more branch below. Backend modules

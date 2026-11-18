@@ -148,7 +148,8 @@ Two settings decide it (`.env`, or the environment):
 
 ```bash
 # Local model (default). Another local model: stage it, then name it.
-ESAM_EMBED_MODEL=BAAI/bge-small-en-v1.5        # folder: models/bge-small-en-v1.5 (or ESAM_EMBED_MODEL_DIR)
+# folder: models/bge-small-en-v1.5 (or ESAM_EMBED_MODEL_DIR)
+ESAM_EMBED_MODEL=BAAI/bge-small-en-v1.5
 
 # An endpoint: setting the URL is the switch. Ollama, TEI, vLLM, OpenAI, a gateway route:
 ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
@@ -219,8 +220,10 @@ tried in order when a call fails in a way another endpoint could fix (unreachabl
 rejected key); each inherits what it leaves unset:
 
 ```bash
-ESAM_REASONING_FALLBACK_1_API=responses                          # same endpoint, the Responses API
-ESAM_REASONING_FALLBACK_2_BASE_URL=https://second-gateway/v1     # another endpoint
+# same endpoint, the Responses API
+ESAM_REASONING_FALLBACK_1_API=responses
+# another endpoint
+ESAM_REASONING_FALLBACK_2_BASE_URL=https://second-gateway/v1
 ```
 
 The coding model is separate, with its own endpoint: `ESAM_CODING_BASE_URL`, `ESAM_CODING_API_KEY`,

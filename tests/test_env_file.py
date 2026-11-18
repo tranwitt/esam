@@ -157,3 +157,18 @@ def test_a_profile_written_the_old_way_still_works(monkeypatch):
     assert env.role_routes(old, "coding")[0].model == "nemotron-4-15b"       # `code` is the older name of the role
     assert set(env.resolve(old)["roles"]) == {"reasoning", "coding", "vision"}
     assert env.role_routes(old, "vision")[0].base_url == "https://gw.example/v1"
+
+
+def test_no_comment_shares_a_line_with_a_variable():
+    """`KEY=value  # note` is read as part of the value by Docker Compose's
+    env_file, systemd and others, so the example file (which people copy to
+    .env and uncomment) and the README's snippets keep comments on their own lines."""
+    import re
+    inline = re.compile(r"^\s*(#\s*)?(export\s+)?[A-Z_][A-Z0-9_]*=\S*\s+#")
+    assert [ln for ln in EXAMPLE.splitlines() if inline.match(ln)] == []
+    readme = (PROJECT_ROOT / "README.md").read_text()
+    assert [ln for ln in readme.splitlines() if re.match(r"^\s*(export\s+)?ESAM_[A-Z0-9_]+=\S*\s+#", ln)] == []
+    # every line that is not a comment or blank is exactly KEY=value, with no space in the value
+    for ln in EXAMPLE.splitlines():
+        if ln.strip() and not ln.lstrip().startswith("#"):
+            assert re.fullmatch(r"[A-Z_][A-Z0-9_]*=\S*", ln), ln

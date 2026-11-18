@@ -8,8 +8,10 @@ Face TEI, Ollama, LiteLLM), an API gateway, and OpenAI itself.
 You choose two things, the MODEL and the URL:
 
     ESAM_EMBED_MODEL=<the model name the endpoint serves>
-    ESAM_EMBED_BASE_URL=https://<host>/v1          # requests go to <this>/embeddings (…/v1/embeddings is also accepted)
-    ESAM_EMBED_API_KEY=...                         # if the endpoint wants one
+    # requests go to <this>/embeddings (…/v1/embeddings is also accepted)
+    ESAM_EMBED_BASE_URL=https://<host>/v1
+    # if the endpoint wants one
+    ESAM_EMBED_API_KEY=...
 
 Setting the URL is enough to switch from the local model to the endpoint
 (ESAM_EMBED_BACKEND=openai is implied). In a profile the same three are

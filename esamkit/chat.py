@@ -8,9 +8,11 @@ On the pilot this is the IL5 API Gateway (GPT-5.1). Configure:
     ESAM_REASONING_MODEL=<the model name the gateway exposes>
 
 Optional:
-    ESAM_REASONING_API=chat | responses | auto      # auto = chat, then responses if chat fails
+    # auto = chat, then responses if chat fails
+    ESAM_REASONING_API=chat | responses | auto
     ESAM_REASONING_FALLBACK_1_BASE_URL=https://<second endpoint>/v1
-    ESAM_REASONING_FALLBACK_1_API_KEY=...           # each field defaults to the primary's
+    # each field defaults to the primary's
+    ESAM_REASONING_FALLBACK_1_API_KEY=...
     ESAM_REASONING_FALLBACK_1_MODEL=...
     ESAM_REASONING_FALLBACK_1_API=responses
 
