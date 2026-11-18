@@ -30,6 +30,10 @@ python -m crew.main graph status                    # is the graph in step with 
 python -m crew.main graph reload                    # rebuild the graph from the baseline and its documents
 python -m crew.main graph reset --yes               # empty the graph
 
+python -m crew.main ingest status                   # is the search store in step with the baseline's documents?
+python -m crew.main ingest reload                   # read, chunk, embed and store every listed document again
+python -m crew.main ingest reload --with-graph      # ... and rebuild the graph afterwards
+
 python -m crew.main tasks add review work/inbox/STD-BRK-001.md     # queue work in PostgreSQL
 python -m crew.main tasks list
 python -m crew.main worker [--once | --drain]                     # process the list
@@ -136,6 +140,26 @@ Use `reload` after editing the baseline by hand, after a `git checkout`, after r
 health check 5 says "reload the graph". None of the three touches the baseline, the documents or the search
 store. All take `--env <profile>`; `python -m crew.graph_admin …` is the same without the crew's other
 dependencies.
+
+## The search store: status, reload, reset
+
+The search store (the embedded chunks) is derived too: every chunk comes from a document the baseline lists.
+`crew/ingest_admin.py` re-ingests those documents or empties the store without an agent, a chat model or the
+lessons folder (it replaces `lessons/03_vector_store/ingest.py` for day-to-day use). The embedding model is called.
+
+| Command | Does |
+|---|---|
+| `ingest status` | Chunks stored per document against what a reload would store, chunks of documents the baseline no longer lists, and the embedding model the store was built with. Compares counts only, so reload after editing a document. Exit code 1 when out of step. No model is loaded |
+| `ingest reload` | Reads and chunks every listed document first and asks the embedding model for one vector; only then replaces the documents one at a time (old chunks out, new chunks in), and removes chunks of documents the baseline no longer lists. A listed document whose file is missing stops it before anything changes; `--force` skips that document |
+| `ingest reload --only ID …` | The same for the named documents; nothing else is touched |
+| `ingest reload --fresh` | Empties the store first. Needed after changing the embedding model or its dimension, which the store otherwise refuses (`ModelMismatchError`) |
+| `ingest reload --with-graph` | Runs `graph reload` afterwards: both derived stores rebuilt in one command |
+| `ingest reset --yes` | Empties the store and leaves it empty until the next `reload` |
+
+If the embedding endpoint fails part-way, the reload stops and says which documents were stored again and which
+are still as they were; each document is whole either way. Run it again. Documents in `data/documents/` that the
+baseline does not list are reported and not stored: bring those in through the intake pipeline (`review` /
+`approve`). `python -m crew.ingest_admin …` is the same without the crew's other dependencies.
 
 ## Step 1: Pipeline A (a document → verified ingestion)
 

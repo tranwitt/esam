@@ -74,7 +74,8 @@ esam/
 │   ├── environment.py, usage.py, tasks.py, runs.py   environments, usage ledger, task list, run folders
 ├── cockpit/                  SE Cockpit (FastAPI + one offline HTML page; snapshot export)
 ├── crew/                     the agents: main.py, crew.py, llm.py (fallback endpoints), custom_tools.py, config/*.yaml;
-│                             graph_admin.py (`python -m crew.main graph status | reload | reset`)
+│                             graph_admin.py (`python -m crew.main graph status | reload | reset`),
+│                             ingest_admin.py (`python -m crew.main ingest status | reload | reset`)
 ├── config/environments/      environment profiles (local, pilot-il5, full-janusgraph); secrets by name only
 ├── data/
 │   ├── baseline/vehicle_decomposition.yaml   SE-owned structure (ESAM YAML format)

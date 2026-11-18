@@ -101,10 +101,14 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   The baseline is now 22 vertices / 24 edges (7 documents), the graph with traceability 44 / 78, and the corpus
   chunks to 46 pieces (8+6+6+7+6 and 7+6 for the two SSDDs, counted with `chunk_markdown`, not ingested). Counts
   were updated in the DB-backed tests (`test_graph_store`, `test_cockpit`, `test_confidence`) WITHOUT running them.
-  To bring a database in step: `python lessons/03_vector_store/ingest.py`, then `python -m crew.main graph reload`.
+  To bring a database in step: `python -m crew.main ingest reload --with-graph`.
   Still quoting older counts: the "28 chunks / 20-vertex graph" lines below and in `HOW_TO_START.md` (they describe
   the database as it was left), lesson 03's sample output and the manual's §2.2 row table. Lessons 05/06 answers
   were not re-run with the two extra documents in the search index.
+- **Search-store utility**: `python -m crew.main ingest status | reload [--only ID …] [--fresh] [--with-graph] |
+  reset --yes` (`crew/ingest_admin.py`, `tests/test_ingest_admin.py` with an in-memory store and embedder). New
+  store helpers `sources()`, `collection_model()`, `drop_collection()` in `vectorstores/pgvector_store.py`. NOT run
+  against PostgreSQL or a real embedding model.
 - **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
   `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
 - **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):

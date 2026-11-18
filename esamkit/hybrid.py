@@ -114,7 +114,7 @@ def retrieve(question: str, emb: Embedder, store: VectorStore, graph: GraphStore
     qvec = emb.embed_query(question)
     hits = store.search(qvec, k=3)
     if not hits:
-        raise LookupError("No chunks found. Run lessons/03_vector_store/ingest.py first.")
+        raise LookupError("No chunks found. Run `python -m crew.main ingest reload` first.")
     top = hits[0]
     log.append(f"1. VECTOR  top hit: {top.chunk.artifact_id} chunk {top.chunk.chunk_index} "
                f"(score {top.score:.3f})")

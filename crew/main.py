@@ -29,6 +29,8 @@ ESAM crew runner.
 
     # The graph (derived from the baseline and its documents): rebuild or empty it. No agent, no model.
     python -m crew.main graph status | reload | reset --yes
+    # The search store (the embedded chunks of the documents): re-ingest every document, or empty it. No agent.
+    python -m crew.main ingest status | reload [--only ID ...] [--fresh] [--with-graph] | reset --yes
 
     # Picture diagrams can also populate the vehicle baseline: the systems and subsystems a diagram shows
     python -m crew.main review architecture.png --set id=SSDD-LTV-002 ... --diagram-baseline propose   # list them
@@ -63,7 +65,7 @@ sys.path.insert(0, str(ROOT))
 from esamkit.environment import apply_telemetry, inspect, load_profile, resolve  # noqa: E402
 from esamkit.usage import UsageLedger  # noqa: E402
 
-from crew import graph_admin  # noqa: E402
+from crew import graph_admin, ingest_admin  # noqa: E402
 from crew.terminal_log import logged  # noqa: E402
 
 RUNS = ROOT / "work" / "runs"
@@ -387,6 +389,11 @@ def cmd_graph(args) -> int:
     return graph_admin.run(args)
 
 
+def cmd_ingest(args) -> int:
+    """Reload or reset the search store (crew/ingest_admin.py). Not a pipeline: no agent, no chat model, no run folder."""
+    return ingest_admin.run(args)
+
+
 @logged("author", LAST_RUN, LOGS)
 def cmd_author(args) -> int:
     from crew.custom_tools import _authoring, build_pack
@@ -627,6 +634,8 @@ def main() -> None:
     b.add_argument("brief")
     g = add("graph", cmd_graph, "the graph: status, reload (rebuild from the baseline), reset (empty it)")
     graph_admin.add_arguments(g)
+    i = add("ingest", cmd_ingest, "the search store: status, reload (re-ingest the baseline's documents), reset (empty it)")
+    ingest_admin.add_arguments(i)
     a = add("ask", cmd_ask, "answer a question with the three agents")
     a.add_argument("question")
     args = ap.parse_args()
