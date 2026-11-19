@@ -7,22 +7,57 @@ description: "Full deployment: JanusGraph (Gremlin) graph, PostgreSQL + pgvector
 network:
   internet: false
 
+# Every `<key>_env` names a variable in esam/.env (or the environment). When
+# that variable is set it is used; otherwise the value written under `<key>`.
+# So .env is the one place to change a URL, a model or a key, and the
+# variable names here are exactly the ones in .env.example.
 llm:
+  # One endpoint per role. Reasoning and coding are SEPARATE: each has its own
+  # URL, key, model, API and fallbacks. If both go through the same gateway,
+  # give both variables the same URL. (Older setups: ESAM_GATEWAY_URL / _KEY
+  # are still read for whichever of the two is not set.)
   roles:
     reasoning:
       model: gpt-5.1
-      base_url_env: ESAM_GATEWAY_URL
-      api_key_env: ESAM_GATEWAY_KEY
-    code:
+      model_env: ESAM_REASONING_MODEL
+      base_url_env: ESAM_REASONING_BASE_URL    # e.g. https://<gateway>/v1
+      api_key_env: ESAM_REASONING_API_KEY
+      api: chat                                # chat | responses | auto (chat, then the Responses API)
+      api_env: ESAM_REASONING_API
+      fallbacks_env: ESAM_REASONING_FALLBACK   # ESAM_REASONING_FALLBACK_1_BASE_URL, _API_KEY, _MODEL, _API; _2_ ...
+    coding:                                    # the only model approved for code generation
       model: nemotron-4-15b
-      base_url_env: ESAM_GATEWAY_URL
-      api_key_env: ESAM_GATEWAY_KEY
+      model_env: ESAM_CODING_MODEL
+      base_url_env: ESAM_CODING_BASE_URL       # its own endpoint
+      api_key_env: ESAM_CODING_API_KEY
+      api: chat
+      api_env: ESAM_CODING_API
+      fallbacks_env: ESAM_CODING_FALLBACK
+    vision:                                    # off until ESAM_VISION_MODEL is set (and documents.diagrams allows it);
+      model_env: ESAM_VISION_MODEL             # set it only if the model accepts pictures
+      base_url_env: ESAM_VISION_BASE_URL       # unset = reasoning's endpoint, key and API
+      api_key_env: ESAM_VISION_API_KEY
+      api_env: ESAM_VISION_API
+      fallbacks_env: ESAM_VISION_FALLBACK
   pricing: null
 
+# The embedding model: WHICH model, and WHERE it runs (see local.yaml).
+# No ESAM_EMBED_BASE_URL = pre-staged model weights on this machine (see the
+# approval note in SESSION_HANDOFF). If the gateway gets an embeddings route,
+# set ESAM_EMBED_BASE_URL (and ESAM_EMBED_MODEL to the model it serves) in .env.
 embeddings:
-  backend: local
-  model_id: BAAI/bge-base-en-v1.5
-  model_dir: models/bge-base-en-v1.5
+  backend: auto                          # auto (endpoint if a URL is set, else local) | local | openai | none
+  model: BAAI/bge-base-en-v1.5
+  model_env: ESAM_EMBED_MODEL
+  base_url_env: ESAM_EMBED_BASE_URL
+  api_key_env: ESAM_EMBED_API_KEY
+  model_dir_env: ESAM_EMBED_MODEL_DIR    # local backend; default models/<last part of the model name>
+
+documents:
+  diagrams: local                        # local = no picture is sent to a model (SVG text, OCR only).
+  diagrams_env: ESAM_DIAGRAMS            # auto in .env AND ESAM_VISION_MODEL set = the vision role describes them
+  diagram_baseline: off                # off | propose | apply: read the systems and subsystems a picture
+  diagram_baseline_env: ESAM_DIAGRAM_BASELINE   # diagram shows into the vehicle baseline (as candidates for an SE)
 
 database:
   backend: postgres
@@ -31,6 +66,7 @@ database:
 vector:
   backend: pgvector
   collection: esam_documents
+  collection_env: ESAM_COLLECTION
 
 graph:
   backend: janusgraph

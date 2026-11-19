@@ -1,5 +1,4 @@
 <title>ESAM SE Cockpit</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <!--
   ESAM SE Cockpit page. ONE file, no CDN, no web fonts: it must open on the
   air-gapped pilot VM. Served by cockpit/app.py (which adds the <html> shell
@@ -84,6 +83,7 @@ main .wrap { padding-block: 20px 40px; }
 
 .panel { background: var(--sheet); border: 1px solid var(--rule); border-radius: 8px; padding: 16px 18px; margin-bottom: 18px; min-width: 0; }
 .panel h2 { font: 600 15px var(--f-display); letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 4px; }
+.panel h3.subhead { font: 600 13px var(--f-display); letter-spacing: 0.05em; text-transform: uppercase; margin: 18px 0 4px; }
 .panel .sub { color: var(--ink-2); font-size: 13px; margin: 0 0 12px; max-width: 72ch; }
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
@@ -175,6 +175,7 @@ svg .s-fn { stroke: var(--t-fn); }   svg .s-doc { stroke: var(--t-doc); }
 svg .s-req { stroke: var(--t-req); } svg .s-tc { stroke: var(--t-tc); }
 svg .f-req { fill: var(--t-req); }   svg .f-tc { fill: var(--t-tc); }
 svg .link.verifies { stroke: var(--t-tc); stroke-width: 2; stroke-dasharray: 4 3; }
+svg .link.traces { stroke: var(--t-req); stroke-width: 1.5; stroke-dasharray: 1 4; stroke-linecap: round; }
 svg .f-top { fill: var(--t-top); } svg .f-sys { fill: var(--t-sys); } svg .f-sub { fill: var(--t-sub); }
 svg .f-fn { fill: var(--t-fn); }   svg .f-doc { fill: var(--t-doc); }
 svg.net circle { stroke: var(--sheet); stroke-width: 2; }
@@ -344,6 +345,9 @@ footer { color: var(--ink-2); font-size: 12px; }
           A missing document on a safety-critical subsystem is shown in red.</p>
         <div class="scroll"><table id="coverage"></table></div>
         <div class="rules" id="rules"></div>
+        <h3 class="subhead">System-level documents</h3>
+        <p class="sub" id="syslevel-note"></p>
+        <div class="scroll"><table id="syslevel"></table></div>
       </div>
       <div class="panel">
         <h2>Interfaces</h2>
@@ -352,9 +356,13 @@ footer { color: var(--ink-2); font-size: 12px; }
       </div>
       <div class="panel">
         <h2>Requirement coverage</h2>
-        <p class="sub">Requirements are read from each SRS and test cases from each STD; a test case covers a requirement through its
-          <em>Verifies:</em> line. A requirement with no test case verifying it is untested.</p>
+        <p class="sub">Requirements are read from each SRS. Each is a system requirement (id <code>SYS-SRS-…</code>: what the subsystem as a
+          whole must do) or a software requirement (id <code>SW-SRS-…</code>: what the software must do); an id with no marker is read as a system requirement; the two are counted apart. Test cases are read
+          from each STD; a test case covers a requirement through its <em>Verifies:</em> line, and a requirement with no test case
+          verifying it is untested. A software requirement points at the system requirement it derives from with its
+          <em>Traces to:</em> line.</p>
         <div class="scroll"><table id="tracecov"></table></div>
+        <details class="untested" id="flowdown"></details>
         <details class="untested" id="untested"></details>
       </div>
       <div class="panel" id="checks-panel">
@@ -469,7 +477,16 @@ const TYPES = {
   Requirement:    { code: "REQ", cls: "req", name: "Requirement",    rank: 7, r: 5 },
   TestCase:       { code: "TC",  cls: "tc",  name: "Test case",      rank: 8, r: 5 },
 };
-const typeOf = (v) => TYPES[v.label] || { code: v.label.slice(0, 3).toUpperCase(), cls: "top", name: v.label, rank: 9, r: 8 };
+// Every requirement read from an SRS is a system or a software requirement, and its id says which
+// (SYS-SRS-… / SW-SRS-…; an unmarked SRS-… is taken as system): props.level; props.level_source says how it was decided.
+const LEVELS = { system: { code: "SYS REQ", name: "System requirement" }, software: { code: "SW REQ", name: "Software requirement" } };
+const levelById = (id) => (String(id).startsWith("SW-") ? "software" : "system");       // no marker: system
+const levelOf = (v) => (v && v.label === "Requirement" ? (v.props.level || levelById(v.eid)) : null);
+const typeOf = (v) => {
+  const t = TYPES[v.label] || { code: v.label.slice(0, 3).toUpperCase(), cls: "top", name: v.label, rank: 9, r: 8 };
+  const lv = LEVELS[levelOf(v)];
+  return lv ? { ...t, code: lv.code, name: lv.name, rank: t.rank + (levelOf(v) === "system" ? 0 : 0.5) } : t;
+};
 
 // h("tag.cls", {attrs}, ...children): small DOM builder. Text is always set
 // as text, never parsed as HTML.
@@ -503,7 +520,7 @@ const store = {
 let M = null;
 function buildModel(data) {
   const byId = new Map(data.graph.vertices.map((v) => [v.eid, v]));
-  const parent = new Map(), children = new Map(), ifaces = [], docsOf = new Map(), verifies = [];
+  const parent = new Map(), children = new Map(), ifaces = [], docsOf = new Map(), verifies = [], traces = [];
   const kid = (p, c) => { if (!children.has(p)) children.set(p, []); children.get(p).push(c); };
   for (const e of data.graph.edges) {
     if (e.type === "PART_OF") { parent.set(e.from_eid, e.to_eid); kid(e.to_eid, e.from_eid); }
@@ -513,6 +530,7 @@ function buildModel(data) {
       docsOf.get(e.from_eid).push(byId.get(e.to_eid));
     } else if (e.type === "SPECIFIED_IN") { parent.set(e.from_eid, e.to_eid); kid(e.to_eid, e.from_eid); }
     else if (e.type === "VERIFIES") verifies.push(e);
+    else if (e.type === "TRACES_TO") traces.push(e);            // software requirement -> the system requirement it derives from
     else if (e.type === "INTERFACES_WITH") ifaces.push(e);
   }
   const order = (a, b) => {
@@ -528,7 +546,7 @@ function buildModel(data) {
     for (const id of eids) { if (!gapsOf.has(id)) gapsOf.set(id, []); gapsOf.get(id).push(t); }
   const path = (id) => { const p = []; let c = parent.get(id); while (c) { p.unshift(c); c = parent.get(c); } return p; };
   const systemOf = (id) => path(id).map((x) => byId.get(x)).find((v) => v.label === "System");
-  return { data, byId, parent, children, roots, ifaces, docsOf, gapsOf, path, systemOf, verifies };
+  return { data, byId, parent, children, roots, ifaces, docsOf, gapsOf, path, systemOf, verifies, traces };
 }
 
 // ── Selection, shared by every view ──────────────────────────────────────────
@@ -549,10 +567,26 @@ const requiredOf = (eid) => {
   const req = M.data.required;
   return req ? Object.keys(req[eid] || {}) : (M.data.doc_types || []);
 };
+const partOf = (d) => { const m = /^(\d+) of (\d+)$/.exec(d.props.part || ""); return m ? [Number(m[1]), Number(m[2])] : null; };
+const docsOfType = (owner, t) => (M.docsOf.get(owner) || []).filter((d) => (d.props.artifact_type || "").toLowerCase() === t)
+  .sort((a, b) => (partOf(a)?.[0] ?? 0) - (partOf(b)?.[0] ?? 0) || a.eid.localeCompare(b.eid));
+function missingParts(docs) {
+  const parts = docs.map(partOf).filter(Boolean);
+  if (!parts.length) return [];
+  const total = Math.max(...parts.map((p) => p[1])), have = new Set(parts.map((p) => p[0]));
+  return Array.from({ length: total }, (_, i) => i + 1).filter((n) => !have.has(n));
+}
 function docState(sub, t) {
   const sc = !!sub.props.safety_critical, required = requiredOf(sub.eid).includes(t);
-  const doc = (M.docsOf.get(sub.eid) || []).find((d) => (d.props.artifact_type || "").toLowerCase() === t);
-  if (doc) return h("span.state.have", {}, "✓ ", nodeLink(doc.eid));
+  // a subsystem may have several documents of one type: parts of one document ("2 of 3"), or simply two of them
+  const docs = docsOfType(sub.eid, t);
+  if (docs.length) {
+    const gap = missingParts(docs);
+    return h("span.state.have", {}, "✓ ", docs.flatMap((d, i) => [i ? ", " : null, nodeLink(d.eid),
+      d.props.part ? h("span.note", {}, ` part ${d.props.part}`) : null]),
+      gap.length ? h("span.state.miss" + (sc ? ".sc" : ""), { title: "Parts of this document that are not in the baseline" },
+        ` part${gap.length > 1 ? "s" : ""} ${gap.join(", ")} missing`) : null);
+  }
   if (!required) return h("span.state.na", { title: "No rule requires this document type for this subsystem" }, "not required");
   const why = ((M.data.required || {})[sub.eid] || {})[t] || [];
   return h("span.state.miss" + (sc ? ".sc" : ""), { title: why.join(" ") }, "missing");
@@ -600,6 +634,7 @@ function renderDashboard() {
     h("ol", {}, rules.map((r) => h("li", {}, "When ", h("b", {}, r.when.map((c) => c.replace(/_/g, " ")).join(" + ")),
       " → ", h("b", {}, r.require.map((t) => t.toUpperCase()).join(", ")), r.why ? ` · ${r.why}` : "")))] : []));
 
+  renderSystemLevel();
   renderTrace();
   renderHealth();
   const ihead = h("tr", {}, ["From", "To", "Message", "Status", "Source document", "Notes"].map((x) => h("th", {}, x)));
@@ -611,6 +646,46 @@ function renderDashboard() {
     h("td.cell", {}, e.props.source_artifact && byId.has(e.props.source_artifact) ? nodeLink(e.props.source_artifact) : h("span.note", {}, "none")),
     h("td", {}, h("span.note", {}, e.props.notes || ""))));
   $("#interfaces").replaceChildren(h("thead", {}, ihead), h("tbody", {}, irows));
+}
+
+// ── Dashboard: documents attached above the subsystems ──────────────────────
+// Most documents belong to a subsystem and sit in the coverage table. A
+// document type whose ontology entry has `attaches_to` (the SSDD) may belong
+// to the vehicle system or to one system: those are listed here.
+const attachClasses = (t) => ((M.data.ontology?.data?.document_types || {})[t] || {}).attaches_to || ["Subsystem"];
+const className = (c) => (TYPES[c]?.name || c).toLowerCase();
+const ownerOf = (doc) => M.byId.get(M.parent.get(doc.eid));
+function systemLevelDocs() {
+  const rank = (v) => TYPES[v.label]?.rank ?? 9;
+  return [...M.docsOf].filter(([owner]) => M.byId.get(owner)?.label !== "Subsystem")
+    .flatMap(([owner, docs]) => docs.map((doc) => ({ doc, owner: M.byId.get(owner) })))
+    .sort((a, b) => rank(a.owner) - rank(b.owner)
+      || String(a.owner.props.wbs_code || "").localeCompare(String(b.owner.props.wbs_code || ""), undefined, { numeric: true })
+      || (a.doc.props.artifact_type || "").localeCompare(b.doc.props.artifact_type || "")
+      || (partOf(a.doc)?.[0] ?? 0) - (partOf(b.doc)?.[0] ?? 0) || a.doc.eid.localeCompare(b.doc.eid));
+}
+function renderSystemLevel() {
+  const types = Object.keys(M.data.ontology?.data?.document_types || {})
+    .filter((t) => attachClasses(t).some((c) => c !== "Subsystem"));
+  const allowed = types.map((t) => `${t.toUpperCase()} (${attachClasses(t).map(className).join(", ")})`).join("; ");
+  const rows = systemLevelDocs();
+  $("#syslevel-note").textContent = "Documents attached to the vehicle system or to one system, not to a subsystem. "
+    + (allowed ? `The ontology allows this for: ${allowed}.` : "The ontology allows no document type above a subsystem.")
+    + (rows.length ? "" : " None in the baseline yet.");
+  if (!rows.length) { $("#syslevel").replaceChildren(); return; }
+  const head = h("tr", {}, ["Document", "Type", "Part", "Rev", "Attached to", "WBS"].map((x) => h("th", {}, x)));
+  $("#syslevel").replaceChildren(h("thead", {}, head), h("tbody", {}, rows.map(({ doc, owner }) => {
+    const t = (doc.props.artifact_type || "").toLowerCase();
+    return h("tr", {},
+      h("td", {}, h("div.who", {}, h("span", {}, doc.props.name || ""), nodeLink(doc.eid))),
+      h("td.cell", { title: (M.data.doc_type_names || {})[t] || "" }, t.toUpperCase()),
+      h("td.cell", {}, doc.props.part || h("span.note", {}, "—"), (() => {
+        const gap = doc.props.part ? missingParts(docsOfType(owner.eid, t)) : [];
+        return gap.length ? h("span.state.miss", {}, ` part${gap.length > 1 ? "s" : ""} ${gap.join(", ")} missing`) : null; })()),
+      h("td.cell.mono", {}, doc.props.revision || ""),
+      h("td", {}, h("div.who", {}, h("span", {}, chip(owner), " ", owner.props.name || ""), nodeLink(owner.eid))),
+      h("td.cell.mono", {}, owner.props.wbs_code || ""));
+  })));
 }
 
 // ── Dashboard: health report ─────────────────────────────────────────────────
@@ -641,20 +716,38 @@ function renderHealth() {
 function renderTrace() {
   const tr = M.data.trace;
   if (!tr) { $("#tracecov").replaceChildren(h("tbody", {}, h("tr", {}, h("td.note", {}, "Not available in this snapshot.")))); $("#untested").hidden = true; return; }
-  const rows = tr.summary.filter((r) => r.requirements > 0);
-  const total = rows.reduce((n, r) => n + r.requirements, 0), ver = rows.reduce((n, r) => n + r.verified, 0);
+  // System requirements and software requirements (both from the SRS, see props.level) are counted apart.
+  // A snapshot made before the split has only the totals: its ids were unmarked, which reads as system.
+  const rows = tr.summary.filter((r) => r.requirements > 0).map((r) => ({ ...r,
+    sys: r.system_requirements ?? r.requirements, sysV: r.system_verified ?? r.verified,
+    sw: r.software_requirements ?? 0, swV: r.software_verified ?? 0 }));
+  const sum = (k) => rows.reduce((n, r) => n + r[k], 0);
+  const cell = (have, of) => (of ? h("td", {}, `${have} of ${of} `, h("span.bar", { role: "img", "aria-label": `${Math.round(100 * have / of)}% verified` },
+    h("i", { style: `width:${(100 * have / of).toFixed(1)}%` }))) : h("td", {}, h("span.note", {}, "none")));
   $("#tracecov").replaceChildren(
-    h("thead", {}, h("tr", {}, ["Subsystem", "Requirements", "Verified by a test", ""].map((x) => h("th", {}, x)))),
+    h("thead", {}, h("tr", {}, ["Allocated to", "System requirements verified", "Software requirements verified"].map((x) => h("th", {}, x)))),
     h("tbody", {}, rows.map((r) => h("tr", {},
-      h("td", {}, h("div.who", {}, h("span", {}, r.name, " ", r.safety_critical ? h("span.chip.sc", {}, "SAFETY") : null), nodeLink(r.eid))),
-      h("td", {}, r.requirements), h("td", {}, `${r.verified} of ${r.requirements}`),
-      h("td", {}, h("span.bar", { role: "img", "aria-label": `${Math.round(100 * r.verified / r.requirements)}% verified` },
-        h("i", { style: `width:${(100 * r.verified / r.requirements).toFixed(1)}%` }))))),
-      h("tr", {}, h("td", {}, h("b", {}, "Total")), h("td", {}, h("b", {}, total)), h("td", {}, h("b", {}, `${ver} of ${total}`)), h("td", {}, ""))));
+      h("td", {}, h("div.who", {}, h("span", {}, M.byId.has(r.eid) && r.label && r.label !== "Subsystem" ? [chip(M.byId.get(r.eid)), " "] : null,
+        r.name, " ", r.safety_critical ? h("span.chip.sc", {}, "SAFETY") : null), nodeLink(r.eid))),
+      cell(r.sysV, r.sys), cell(r.swV, r.sw))),
+      h("tr", {}, h("td", {}, h("b", {}, "Total")), h("td", {}, h("b", {}, sum("sys") ? `${sum("sysV")} of ${sum("sys")}` : "none")),
+        h("td", {}, h("b", {}, sum("sw") ? `${sum("swV")} of ${sum("sw")}` : "none")))));
+  // Flow-down: which system requirements a software requirement traces to (its "Traces to:" line).
+  const sysReqs = [...M.byId.values()].filter((v) => levelOf(v) === "system");
+  const picked = new Set(M.traces.map((e) => e.to_eid));
+  const open = sysReqs.filter((v) => !picked.has(v.eid)).sort((a, b) => a.eid.localeCompare(b.eid));
+  $("#flowdown").hidden = !sysReqs.length;
+  $("#flowdown").replaceChildren(
+    h("summary", {}, `${sysReqs.length - open.length} of ${sysReqs.length} system requirement${sysReqs.length === 1 ? "" : "s"} traced to by a software requirement`),
+    open.length ? h("ul", {}, open.map((v) => h("li", {}, nodeLink(v.eid), " ", h("span.note", {}, `${v.props.name || ""} (no software requirement traces to it)`))))
+      : h("p", {}, h("span.note", {}, "Every system requirement has a software requirement tracing to it.")));
   const un = tr.untested || [];
   $("#untested").hidden = !un.length;
-  $("#untested").replaceChildren(h("summary", {}, `${un.length} untested requirement${un.length === 1 ? "" : "s"}`),
-    h("ul", {}, un.map((u) => h("li", {}, nodeLinkIf(u.eid), " ", h("span.note", {}, `${u.name} (${u.subsystem}, ${u.document})`)))));
+  const nSys = un.filter((u) => u.level === "system").length;
+  $("#untested").replaceChildren(h("summary", {}, `${un.length} untested requirement${un.length === 1 ? "" : "s"}`
+    + (un.length && tr.summary.some((r) => r.system_requirements) ? ` (${nSys} system, ${un.length - nSys} software)` : "")),
+    h("ul", {}, un.map((u) => h("li", {}, h("span.chip.t-req", { title: LEVELS[u.level || levelById(u.eid)].name }, LEVELS[u.level || levelById(u.eid)].code), " ",
+      nodeLinkIf(u.eid), " ", h("span.note", {}, `${u.name} (${u.subsystem}, ${u.document})`)))));
 }
 
 // ── Dashboard: checks (latest run of each) ───────────────────────────────────
@@ -728,10 +821,11 @@ function renderOntology() {
 
   const required = new Set(M.data.doc_types || []);
   const sections = [];
-  sections.push(ontoPanel("documents", "Document types", "The kinds of documents ESAM knows. Question words and synonyms are how ESAM tells which document a question needs.",
-    ontoTable(["Code", "Name", "Standard", "Used by rules", "Question words", "Synonyms"],
+  sections.push(ontoPanel("documents", "Document types", "The kinds of documents ESAM knows. Attaches to is what a document of that type may belong to. Question words and synonyms are how ESAM tells which document a question needs.",
+    ontoTable(["Code", "Name", "Standard", "Attaches to", "Used by rules", "Question words", "Synonyms"],
       Object.entries(d.document_types || {}).map(([k, t]) => h("tr", {},
         h("td.mono-cell", {}, k.toUpperCase()), h("td", {}, t.name || ""), h("td", {}, h("span.note", {}, t.standard || "")),
+        h("td", {}, tags(t.attaches_to || ["Subsystem"])),
         h("td.cell", {}, required.has(k) ? h("span.tag.on", {}, "yes") : h("span.note", {}, "no")),
         h("td", {}, tags(t.answers)), h("td", {}, tags(t.synonyms)))))));
   sections.push(ontoPanel("rules", "Rules", "What each kind of subsystem must have. A subsystem must have every document required by every rule that applies to it.",
@@ -866,7 +960,7 @@ function simulate() {
   const ids = [...M.byId.keys()];
   const P = new Map(ids.map((id) => [id, { x: depthOf.get(id) * 120, y: y.get(id) * 1.1, vx: 0, vy: 0 }]));
   const links = M.data.graph.edges;
-  const rest = { PART_OF: 70, HAS_ARTIFACT: 55, INTERFACES_WITH: 110, SPECIFIED_IN: 40, VERIFIES: 60, ALLOCATED_TO: 0 };
+  const rest = { PART_OF: 70, HAS_ARTIFACT: 55, INTERFACES_WITH: 110, SPECIFIED_IN: 40, VERIFIES: 60, TRACES_TO: 90, ALLOCATED_TO: 0 };
   for (let it = 0; it < 500; it++) {
     const cool = 1 - it / 500;
     for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) {
@@ -902,7 +996,8 @@ function renderNetwork() {
   for (const e of M.data.graph.edges) {
     if (e.type === "ALLOCATED_TO") continue;      // shown in the details panel; would double every requirement's links
     const cls = e.type === "INTERFACES_WITH" ? "iface" + (e.props.status === "candidate" ? " candidate" : "")
-      : e.type === "VERIFIES" ? "link verifies" : "link" + (e.type === "HAS_ARTIFACT" || e.type === "SPECIFIED_IN" ? " doc" : "");
+      : e.type === "VERIFIES" ? "link verifies" : e.type === "TRACES_TO" ? "link traces"
+      : "link" + (e.type === "HAS_ARTIFACT" || e.type === "SPECIFIED_IN" ? " doc" : "");
     const l = s("line", { class: cls, "marker-end": e.type === "INTERFACES_WITH" ? "url(#arw2)" : null });
     l.append(s("title", {}, `${e.from_eid} —${e.type}→ ${e.to_eid}${e.props.message ? " · " + e.props.message : ""}`));
     lines.push([l, e]); svg.append(l);
@@ -975,6 +1070,15 @@ function renderDetails() {
       h("li", {}, h("span.mono", {}, dt.toUpperCase().padEnd(5, " ")), " ", docState(v, dt)))));
   }
   if (v.label === "Requirement") {
+    const lv = levelOf(v), up = M.traces.filter((e) => e.from_eid === v.eid), down = M.traces.filter((e) => e.to_eid === v.eid);
+    const reqItem = (id) => h("li", {}, nodeLink(id), " ", h("span.note", {}, M.byId.get(id)?.props.name || ""));
+    parts.push(h("h4", {}, "Level"), h("p", {}, h("span.chip.t-req", {}, LEVELS[lv].code), " ", LEVELS[lv].name,
+      h("span.note", {}, " (" + ({ id: "its id says so: SYS-SRS-… system, SW-SRS-… software; no marker is read as system", stated: "stated on its Level: line", wording: "from the subject of its \"shall\"", assumed: "assumed: neither stated nor clear from its wording" }[v.props.level_source] || "not recorded; reload the graph") + ")")));
+    if (up.length) parts.push(h("h4", {}, "Traces to"), h("ul", {}, up.map((e) => reqItem(e.to_eid))));
+    else if (lv === "software" && [...M.byId.values()].some((x) => levelOf(x) === "system"))
+      parts.push(h("h4", {}, "Traces to"), h("p", {}, h("span.note", {}, "no system requirement")));
+    if (lv === "system") parts.push(h("h4", {}, "Traced to by"), down.length ? h("ul", {}, down.map((e) => reqItem(e.from_eid)))
+      : h("p", {}, h("span.note", {}, "no software requirement traces to this yet")));
     const by = M.verifies.filter((e) => e.to_eid === v.eid);
     parts.push(h("h4", {}, "Verified by"), by.length
       ? h("ul", {}, by.map((e) => h("li", {}, nodeLink(e.from_eid), " ", h("span.note", {}, M.byId.get(e.from_eid)?.props.name || ""))))
@@ -986,7 +1090,15 @@ function renderDetails() {
     parts.push(h("h4", {}, "Verifies"), h("ul", {}, outs.map((e) => h("li", {}, nodeLink(e.to_eid), " ", h("span.note", {}, M.byId.get(e.to_eid)?.props.name || ""))),
       missing.map((r) => h("li", {}, h("span.state.miss", {}, `${r}: no such requirement`)))));
   }
+  if (v.label !== "Subsystem" && v.label !== "DesignArtifact" && (M.docsOf.get(v.eid) || []).length) {
+    parts.push(h("h4", {}, "Documents"), h("ul", {}, M.docsOf.get(v.eid).map((d) => h("li", {},
+      h("span.mono", {}, (d.props.artifact_type || "").toUpperCase().padEnd(5, " ")), " ", h("span.state.have", {}, "✓ ", nodeLink(d.eid)),
+      " ", h("span.note", {}, (d.props.part ? `part ${d.props.part} · ` : "") + (d.props.name || ""))))));
+  }
   if (v.label === "DesignArtifact") {
+    const owner = ownerOf(v);
+    if (owner) parts.push(h("h4", {}, "Attached to"),
+      h("p", {}, chip(owner), " ", nodeLink(owner.eid), " ", h("span.note", {}, owner.props.name || "")));
     const usedBy = M.ifaces.filter((e) => e.props.source_artifact === v.eid);
     if (usedBy.length) parts.push(h("h4", {}, "Defines interfaces"),
       h("ul", {}, usedBy.map((e) => h("li", {}, nodeLink(e.from_eid), " → ", nodeLink(e.to_eid), " ", h("span.mono", {}, shortMsg(e.props.message))))));

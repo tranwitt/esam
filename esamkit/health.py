@@ -21,12 +21,14 @@ Reads the graph, the raw baseline YAML, the documents folder and chunk
 counts. It never loads the embedding model.
 """
 
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
+from .traceability import _ID, level_of_id
 from .config import Settings, settings
 from .graphstores.base import GraphStore
 from .ontology import Ontology, check_baseline, default_ontology
@@ -78,16 +80,29 @@ def health_report(graph: GraphStore, onto: Ontology, baseline_data: dict, docume
     f3 = [_f(f"{e['from_eid']} → {e['to_eid']}", f"{e['props'].get('message') or 'interface'} link is a candidate"
              + (f": {e['props']['notes']}" if e["props"].get("notes") else ""), sc(e["from_eid"]) or sc(e["to_eid"]))
           for e in ifaces if e["props"].get("status") == "candidate"]
+    # systems and subsystems added from a diagram, not yet confirmed by an SE
+    f3 += [_f(e, f"{v['label'].lower()} {v['props'].get('name', '')!r} is a candidate"
+                 + (f", read from {v['props']['derived_from']}" if v["props"].get("derived_from") else "")
+                 + ": check it, complete its attributes and remove 'status: candidate'", sc(e))
+           for e, v in sorted(V.items()) if v["label"] in ("System", "Subsystem") and v["props"].get("status") == "candidate"]
 
     # 4. Traceability
     reqs = {e for e, v in V.items() if v["label"] == "Requirement"}
-    f4 = [_f(r["eid"], f"no test case verifies it ({r['subsystem']}, {r['document']})", sc(r["subsystem"]))
+    req_id = re.compile(onto.classes["Requirement"]["id_pattern"])
+    f4 = [_f(r["eid"], f"{r.get('level') or level_of_id(r['eid']) or 'system'} requirement: no test case verifies it "
+                       f"({r['subsystem']}, {r['document']})", sc(r["subsystem"]))
           for r in graph.untested_requirements()]
     for e, v in sorted(V.items()):
         if v["label"] == "TestCase":
             for ref in v["props"].get("verifies", []):
                 if ref not in reqs:
                     f4.append(_f(e, f"verifies {ref}, which no SRS defines"))
+        elif v["label"] == "Requirement":
+            # a parent written as a requirement id that no SRS states
+            for ref in v["props"].get("traces_to") or []:
+                for parent in _ID.findall(ref):
+                    if req_id.match(parent) and parent not in reqs:
+                        f4.append(_f(e, f"traces to {parent}, which no SRS defines", sc(v["props"].get("subsystem"))))
 
     # 5. Integrity (blocks)
     f5 = [_f(x.where, f"baseline vs ontology: {x.message}") for x in

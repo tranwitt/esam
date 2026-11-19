@@ -87,7 +87,7 @@ def test_review_ingest_verify_undo(bench):
     assert [c["id"] for c in review["test_cases"]] == ["TC-BRK-010", "TC-BRK-011", "TC-BRK-021", "TC-BRK-030"]
     tc011 = next(c for c in review["test_cases"] if c["id"] == "TC-BRK-011")
     assert "15 ms" in tc011["verifies"][0]["text"]                   # the requirement text, for the comparison
-    assert "SRS-BRK-012" in review["still_untested"]
+    assert "SW-SRS-BRK-012" in review["still_untested"]
 
     before = report_for(graph, s)
     manifest = ingest(STAGED, entry, emb, store, graph, tmp / "replaced", s)

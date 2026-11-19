@@ -77,6 +77,24 @@ class Ontology:
                     out.setdefault(t, []).append(rule.get("why", ""))
         return {t: out[t] for t in self.document_types if t in out}
 
+    def requirement_classification(self) -> dict:
+        """How an SRS requirement is told to be a system or a software
+        requirement: {"id_marker": {level: marker}, "unmarked": level,
+        "default": level, "subjects": {level: [words]}}. The marker in the id
+        decides (SYS-SRS-…, SW-SRS-…; `unmarked` for plain SRS-…); the rest is
+        the cross-check (and the fallback for an id that is not an SRS- id)."""
+        rc = self.data.get("requirement_classification") or {}
+        return {"id_marker": {k: str(v).upper() for k, v in (rc.get("id_marker") or {}).items()},
+                "unmarked": rc.get("unmarked") or "system",
+                "default": rc.get("default") or "software",
+                "subjects": {k: [str(w).lower() for w in v or []] for k, v in (rc.get("subjects") or {}).items()}}
+
+    def attach_classes(self, doc_type: str | None) -> list[str]:
+        """The classes a document of this type may be attached to: the type's
+        `attaches_to`, or the class DesignArtifact.attached_to names."""
+        default = self.classes["DesignArtifact"]["attributes"]["attached_to"].get("class", "Subsystem")
+        return list((self.document_types.get(str(doc_type or "").lower()) or {}).get("attaches_to") or [default])
+
     def required_types(self) -> list[str]:
         """Every document type some rule can require, in document_types order."""
         wanted = {t for r in self.rules.get("required_documents", []) for t in r.get("require", [])}
@@ -105,6 +123,30 @@ class Ontology:
                     out.append(Finding("error", f"relationship {rname}", f"unknown class {end!r}"))
             for pname, spec in (r.get("properties") or {}).items():
                 check_attr(f"relationship {rname}.{pname}", spec)
+        levels, rc = set(self.value_sets.get("requirement_level") or {}), self.requirement_classification()
+        for level in dict.fromkeys([rc["default"], rc["unmarked"], *rc["subjects"], *rc["id_marker"]]):
+            if levels and level not in levels:
+                out.append(Finding("error", "requirement_classification",
+                                   f"{level!r} is not in value_sets.requirement_level ({', '.join(sorted(levels))})"))
+        pattern = self.classes.get("Requirement", {}).get("id_pattern")
+        for level in sorted(levels):
+            marker = rc["id_marker"].get(level)
+            if not marker:
+                out.append(Finding("error", "requirement_classification", f"id_marker has no marker for {level} requirements"))
+            elif pattern and not re.match(pattern, f"{marker}-SRS-X-010"):
+                out.append(Finding("error", "requirement_classification",
+                                   f"id_marker.{level} = {marker!r} does not fit classes.Requirement.id_pattern "
+                                   f"({marker}-SRS-X-010 must match it)"))
+        if len(set(rc["id_marker"].values())) < len(rc["id_marker"]):
+            out.append(Finding("error", "requirement_classification", "two levels share one id marker"))
+        owners = self.relationships.get("HAS_ARTIFACT", {}).get("from", [])
+        for tname in self.document_types:
+            for cname in self.attach_classes(tname):
+                if cname not in self.classes:
+                    out.append(Finding("error", f"document type {tname}", f"attaches_to unknown class {cname!r}"))
+                elif cname not in owners:
+                    out.append(Finding("error", f"document type {tname}",
+                                       f"attaches_to {cname}, but HAS_ARTIFACT does not start from {cname}"))
         for i, rule in enumerate(self.rules.get("required_documents", []), 1):
             for t in rule.get("require", []):
                 if t not in self.document_types:
@@ -173,9 +215,11 @@ def _check_node(onto: Ontology, cname: str, node: dict, parent: dict | None, see
                                                "(misspelt? or add it to the ontology)"))
             continue
         out += _check_value(onto, eid, key, value, attrs[key])
+    candidate = node.get("status") == "candidate"          # read from a diagram, awaiting an SE
     for key, spec in attrs.items():
         if spec.get("required") and key not in node:
-            out.append(Finding("error", eid, f"required attribute {key!r} is missing"))
+            out.append(Finding("warning", eid, f"candidate: required attribute {key!r} is still to be given by an SE")
+                       if candidate else Finding("error", eid, f"required attribute {key!r} is missing"))
 
     # WBS codes must nest: a child's code extends its parent's. MIL-STD-881
     # writes the Level 1 root as "1.0", and its children as "1.1", "1.2", ...
@@ -190,6 +234,71 @@ def _check_node(onto: Ontology, cname: str, node: dict, parent: dict | None, see
         for child in node.get(child_key) or []:
             out += _check_node(onto, child_class, child, node, seen)
     return out
+
+
+_PART = re.compile(r"^([1-9]\d?) of ([1-9]\d?)$")
+
+
+def part_sets(artifacts: list[dict]) -> list[dict]:
+    """Multi-part documents among the baseline's artifacts. Parts of one
+    document share a type and an owner and each carries `part: "n of N"`.
+    [{type, attached_to, total, totals, present: {n: [ids]}, missing: [n], documents: [ids]}]"""
+    groups: dict[tuple, list[tuple[int, int, str]]] = {}
+    for art in artifacts or []:
+        m = _PART.match(str(art.get("part") or ""))
+        if m:
+            groups.setdefault((str(art.get("type", "")).lower(), art.get("attached_to")), []).append(
+                (int(m[1]), int(m[2]), art.get("id", "?")))
+    out = []
+    for (dtype, owner), parts in sorted(groups.items(), key=lambda kv: (kv[0][0], str(kv[0][1]))):
+        totals = sorted({t for _, t, _ in parts})
+        total = max(totals)
+        present: dict[int, list[str]] = {}
+        for n, _, aid in sorted(parts):
+            present.setdefault(n, []).append(aid)
+        out.append({"type": dtype, "attached_to": owner, "total": total, "totals": totals, "present": present,
+                    "missing": [n for n in range(1, total + 1) if n not in present],
+                    "documents": [aid for _, _, aid in sorted(parts)]})
+    return out
+
+
+def _check_parts(artifacts: list[dict]) -> list[Finding]:
+    out = []
+    for art in artifacts or []:
+        m = _PART.match(str(art.get("part") or ""))
+        if m and int(m[1]) > int(m[2]):
+            out.append(Finding("error", art.get("id", "?"), f"part = {art['part']!r}: the part number is larger than the number of parts"))
+    for ps in part_sets(artifacts):
+        where = f"{ps['type'].upper()} for {ps['attached_to']}"
+        for n, ids in ps["present"].items():
+            if len(ids) > 1:
+                out.append(Finding("error", where, f"part {n} is claimed by more than one document: {', '.join(ids)}"))
+        if len(ps["totals"]) > 1:
+            out.append(Finding("warning", where, "its parts disagree on how many parts there are "
+                                                 f"({', '.join(str(t) for t in ps['totals'])}): {', '.join(ps['documents'])}"))
+        if ps["missing"]:
+            out.append(Finding("warning", where, f"part{'s' if len(ps['missing']) > 1 else ''} "
+                                                 f"{', '.join(str(n) for n in ps['missing'])} of {ps['total']} "
+                                                 f"{'are' if len(ps['missing']) > 1 else 'is'} not in the baseline "
+                                                 f"(have: {', '.join(ps['documents'])})"))
+    return out
+
+
+def _one_of(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
+
+
+def find_node(data: dict, eid: str | None) -> tuple[str, dict] | None:
+    """(class, node) of an id in the baseline's vehicle tree."""
+    def walk(cname, node):
+        if node.get("id") == eid:
+            return cname, node
+        key, child = _CHILDREN.get(cname, (None, None))
+        for c in (node.get(key) or []) if key else []:
+            if found := walk(child, c):
+                return found
+        return None
+    return walk("Vehicle", data.get("vehicle") or {}) if eid else None
 
 
 def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None) -> list[Finding]:
@@ -237,20 +346,24 @@ def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None
                 if spec.get("required"):
                     out.append(Finding("error", aid, f"required attribute {key!r} is missing"))
             elif spec.get("type") == "ref":
-                if seen.get(art[key]) != spec["class"]:
-                    out.append(Finding("error", aid, f"{key} = {art[key]!r} is not a {spec['class']} in the baseline"))
+                # attached_to: the classes this document's type allows (a subsystem; for an SSDD also the vehicle or a system)
+                classes = onto.attach_classes(art.get("type")) if key == "attached_to" else [spec["class"]]
+                if seen.get(art[key]) not in classes:
+                    out.append(Finding("error", aid, f"{key} = {art[key]!r} is not a {_one_of(classes)} in the baseline"))
             else:
                 out += _check_value(onto, aid, key, art[key], spec)
         if art.get("file"):
             listed_files.add(art["file"])
             if documents_dir and not (documents_dir / art["file"]).exists():
                 out.append(Finding("error", aid, f"file {art['file']!r} is listed but not in {documents_dir.name}/"))
+    out += _check_parts(arts)
     for i, iface in enumerate(data.get("interfaces") or [], 1):
         src = iface.get("source_artifact")
         if src and art_type.get(src) != "icd":
             out.append(Finding("error", f"interface {i}", f"source_artifact {src!r} is not an ICD in the baseline"))
     if documents_dir and documents_dir.exists():
-        for f in sorted(documents_dir.glob("*.md")):
+        from .readers import document_files
+        for f in document_files(documents_dir):
             if f.name not in listed_files:
                 out.append(Finding("warning", f.name, "file is in the documents folder but not listed in the baseline"))
     return out

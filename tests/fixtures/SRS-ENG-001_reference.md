@@ -32,8 +32,10 @@ No states or modes are required.
 
 ### 3.2 CSCI capability requirements
 
-- **SRS-ENG-010** While ASR engine control active is 01 in EBC1, the software shall limit engine torque to the level requested for traction control.
-  Safety: SwCI 3 | Verification: T | Traces to: SSF-ENG-02, ICD-ENG-001 §2.1 | Basis: MIL-STD-882E 4.4.2
+- **SYS-SRS-ENG-040** The Engine Control Module shall reduce engine torque when the brake ECU requests traction control.
+  Verification: T | Traces to: ICD-ENG-001 §2.1
+- **SW-SRS-ENG-010** While ASR engine control active is 01 in EBC1, the software shall limit engine torque to the level requested for traction control.
+  Safety: SwCI 3 | Verification: T | Traces to: SSF-ENG-02, ICD-ENG-001 §2.1, SYS-SRS-ENG-040 | Basis: MIL-STD-882E 4.4.2
 
 ### 3.3 CSCI external interface requirements
 
@@ -41,7 +43,7 @@ No states or modes are required.
 
 EBC1 (PGN 61441) is received from the brake ECU; EEC1 (PGN 61444) is transmitted. See ICD-ENG-001.
 
-- **SRS-ENG-030** The software shall transmit EEC1 (PGN 61444) every 10 ms.
+- **SW-SRS-ENG-030** The software shall transmit EEC1 (PGN 61444) every 10 ms.
   Timing: 10 ms period | Verification: T | Traces to: ICD-ENG-001 §3.1 | Basis: DI-IPSC-81433A 3.3.xe
 
 ### 3.4 CSCI internal interface requirements
@@ -58,9 +60,9 @@ No requirements.
 
 ### 3.7 Safety requirements
 
-- **SRS-ENG-020** While ABS active is 01 in EBC1, the software shall inhibit the engine compression brake within 20 ms.
+- **SW-SRS-ENG-020** While ABS active is 01 in EBC1, the software shall inhibit the engine compression brake within 20 ms.
   Safety: SwCI 2 | Timing: 20 ms max | Verification: T | Traces to: SSF-ENG-01, ICD-ENG-001 §2.1 | Basis: MIL-STD-882E 4.4.2, DI-IPSC-81433A 3.7
-- **SRS-ENG-021** If no EBC1 frame is received for 300 ms, the software shall set a lost-communication trouble code in DM1.
+- **SW-SRS-ENG-021** If no EBC1 frame is received for 300 ms, the software shall set a lost-communication trouble code in DM1.
   Safety: SwCI 2 | Timing: 300 ms timeout | Verification: T | Traces to: SSF-ENG-03, ICD-ENG-001 §2.1 | Basis: MIL-STD-882E B.2.2.5a
 
 ### 3.8 Security and privacy requirements
@@ -119,7 +121,7 @@ This paragraph has been tailored out.
 
 ### 3.18 Precedence and criticality of requirements
 
-SRS-ENG-020 and SRS-ENG-021 are SwCI 2 and take precedence; SRS-ENG-010 is SwCI 3.
+SW-SRS-ENG-020 and SW-SRS-ENG-021 are SwCI 2 and take precedence; SW-SRS-ENG-010 is SwCI 3.
 
 ## 4 Qualification provisions
 

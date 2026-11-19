@@ -8,7 +8,7 @@ SUBS = [{"eid": "SUB-ENG-ECM", "name": "Engine Control Module", "aliases": ["ECM
 
 
 def test_doc_types_from_question_words():
-    assert doc_types_needed("How is SRS-BRK-011 verified? Give the test steps.") == ["std"]
+    assert doc_types_needed("How is SW-SRS-BRK-011 verified? Give the test steps.") == ["std"]
     assert doc_types_needed("Does the ECM use the EBC1 brake message?") == ["icd"]
     assert doc_types_needed("What colour is the cab?") == []
 

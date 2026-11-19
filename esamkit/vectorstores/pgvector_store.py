@@ -137,6 +137,10 @@ class PgVectorStore(VectorStore):
     def count(self) -> int:
         return self._conn.execute(f"SELECT count(*) FROM {self._table}").fetchone()[0]
 
+    def sources(self) -> dict[str, int]:
+        rows = self._conn.execute(f"SELECT source_file, count(*) FROM {self._table} GROUP BY source_file").fetchall()
+        return {name: n for name, n in rows}
+
     def reset(self) -> None:
         self._conn.execute(f"DROP TABLE IF EXISTS {self._table}")
         self._conn.execute("DELETE FROM esam_collections WHERE name = %s", (self._name,))
@@ -156,3 +160,33 @@ def chunk_counts(dsn: str, collection: str) -> dict[str, int]:
             return {}
         rows = conn.execute(f"SELECT artifact_id, count(*) FROM {collection}_chunks GROUP BY artifact_id").fetchall()
     return {a: n for a, n in rows}
+
+
+def collection_model(dsn: str, collection: str) -> tuple[str, int] | None:
+    """(embedding model id, dimension) a collection was built with, or None
+    when it does not exist. No embedding model is loaded."""
+    import psycopg
+
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        if conn.execute("SELECT to_regclass('esam_collections')").fetchone()[0] is None:
+            return None
+        row = conn.execute("SELECT embed_model_id, embed_dim FROM esam_collections WHERE name = %s", (collection,)).fetchone()
+    return (row[0], int(row[1])) if row else None
+
+
+def drop_collection(dsn: str, collection: str) -> int:
+    """Remove a collection and its record of the model it was built with,
+    WITHOUT opening it (so it works when the embedding model has changed and
+    opening would raise ModelMismatchError). Returns the chunks removed."""
+    if not _SAFE_NAME.match(collection):
+        raise ValueError(f"collection name must match {_SAFE_NAME.pattern}")
+    import psycopg
+
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        n = 0
+        if conn.execute("SELECT to_regclass(%s)", (f"{collection}_chunks",)).fetchone()[0] is not None:
+            n = conn.execute(f"SELECT count(*) FROM {collection}_chunks").fetchone()[0]
+            conn.execute(f"DROP TABLE {collection}_chunks")
+        if conn.execute("SELECT to_regclass('esam_collections')").fetchone()[0] is not None:
+            conn.execute("DELETE FROM esam_collections WHERE name = %s", (collection,))
+    return n

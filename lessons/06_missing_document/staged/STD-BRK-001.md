@@ -15,7 +15,7 @@ speed are simulated.
 
 ## TC-BRK-010 — Wheel-slip control loop period and jitter
 
-Verifies: SRS-BRK-010.
+Verifies: SW-SRS-BRK-010.
 Method: Test.
 Steps: 1. Run the vehicle model at 60 km/h on a simulated 0.3 friction surface. 2. Apply 70 %
 brake pedal for 20 s. 3. Record the control-loop start timestamps from the ECU debug output.
@@ -24,7 +24,7 @@ cycles.
 
 ## TC-BRK-011 — Pressure release time on incipient wheel lock-up
 
-Verifies: SRS-BRK-011.
+Verifies: SW-SRS-BRK-011.
 Method: Test.
 Steps: 1. Run the vehicle model at 40 km/h on a simulated 0.2 friction (ice) surface.
 2. Apply 80 % brake pedal. 3. Inject incipient lock-up on one wheel: wheel deceleration
@@ -36,7 +36,7 @@ unaffected wheels does not drop by more than 5 % during the release.
 
 ## TC-BRK-021 — Fault fallback to conventional braking
 
-Verifies: SRS-BRK-021.
+Verifies: SW-SRS-BRK-021.
 Method: Test.
 Steps: 1. Brake at 50 % pedal at 30 km/h on dry surface. 2. Inject an internal fault (corrupt
 the wheel-speed sensor 2 signal). 3. Measure the time from fault injection to the modulator
@@ -46,7 +46,7 @@ warning lamp request is set in the next EBC1 frame.
 
 ## TC-BRK-030 — EBC1 transmission period
 
-Verifies: SRS-BRK-030.
+Verifies: SW-SRS-BRK-030.
 Method: Test.
 Steps: 1. Power the ECU with no braking for 10 minutes. 2. Capture all EBC1 frames (PGN 61441,
 source address 11) with the bus analyser.

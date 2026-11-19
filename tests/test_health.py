@@ -39,7 +39,7 @@ def test_synth_ltv_report(graph, data):
     assert [(f["where"], f["critical"]) for f in c[1]["findings"]] == [
         ("SUB-BRK-ECU", True), ("SUB-DCL", False), ("SUB-ENG-ECM", False), ("SUB-J1939-BB", True)]
     assert len(c[3]["findings"]) == 1 and "candidate" in c[3]["findings"][0]["message"]
-    assert len(c[4]["findings"]) == 16
+    assert len(c[4]["findings"]) == 22                    # 16 software and 6 system requirements, none tested yet
     roll = {r["eid"]: (r["present"], r["required"], r["percent"]) for r in c[6]["rollup"]}
     assert roll["V-001"] == (5, 9, 56) and roll["SYS-SUSP"] == (3, 4, 75) and roll["SYS-PWR"] == (0, 1, 0)
 
@@ -68,7 +68,7 @@ def test_integrity_blocks_when_graph_and_baseline_disagree(graph, data):
 
 def test_traceability_reports_unknown_requirement(graph, data, baseline, tmp_path):
     from esamkit.baseline import Baseline
-    (tmp_path / "STD-BRK-001.md").write_text("## TC-BRK-001 — t\nVerifies: SRS-BRK-011, SRS-BRK-999.\nMethod: Test.\n")
+    (tmp_path / "STD-BRK-001.md").write_text("## TC-BRK-001 — t\nVerifies: SW-SRS-BRK-011, SRS-BRK-999.\nMethod: Test.\n")
     overlay = Baseline(baseline.metadata, baseline.vertices, baseline.edges,
                        baseline.artifacts + [{"id": "STD-BRK-001", "name": "x", "type": "std", "revision": "A",
                                               "attached_to": "SUB-BRK-ECU", "file": "STD-BRK-001.md"}])
@@ -76,4 +76,4 @@ def test_traceability_reports_unknown_requirement(graph, data, baseline, tmp_pat
     _, c = run(graph, data)
     msgs = [f["where"] + ": " + f["message"] for f in c[4]["findings"]]
     assert "TC-BRK-001: verifies SRS-BRK-999, which no SRS defines" in msgs
-    assert not any(m.startswith("SRS-BRK-011:") for m in msgs)       # now verified
+    assert not any(m.startswith("SW-SRS-BRK-011:") for m in msgs)       # now verified

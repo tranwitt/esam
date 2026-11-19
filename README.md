@@ -22,7 +22,7 @@ The lessons grew into a working system an SE can use (learning build, synthetic 
 |---|---|---|
 | **SE baseline + ontology** | The vehicle structure in YAML, checked against the programme vocabulary (MIL-STD-498 document names, MIL-STD-882E criticality, rules for which documents each subsystem needs) | SE manual §1, §8 |
 | **Hybrid answers** | Questions answered from the documents *and* the graph, with **MISSING** when a needed document or test doesn't exist | §7, `docs/how_esam_finds_answers.html` |
-| **Traceability + health report** | Requirements and test cases read from the documents; six checks on the baseline, only integrity blocks | §5, §10 |
+| **Traceability + health report** | Requirements read from each SRS, where the id says system (`SYS-SRS-…`) or software (`SW-SRS-…`); an id with no marker is read as system, and test cases, all read from the documents; six checks on the baseline, only integrity blocks | §5, §10 |
 | **SE Cockpit** | Dashboard, Graph, Ontology and Tasks tabs (`uvicorn cockpit.app:app --port 8080`) | `cockpit/README.md` |
 | **The agents (CrewAI)** | Review a document → **SE approves** → ingest + verify; ask questions; draft an SRS from an SE brief with an evidence pack; a task list and worker; full run logs | §11, §12, `crew/README.md` |
 | **Standards library** | MIL-STD-882E (extract) and the SRS DID (DI-IPSC-81433A), cited only by real clause | §11.4 |
@@ -51,11 +51,18 @@ esam/
 │   ├── factory.py            the ONLY place that picks concrete backends
 │   ├── baseline.py           SE YAML baseline -> vertices + edges (no DB code)
 │   ├── chunking.py           documents -> heading-labelled chunks
-│   ├── chat.py               OpenAI-compatible chat client (lesson 05; optional)
+│   ├── chat.py               the chat model for lessons 05/06 (a thin wrapper over llm.py)
+│   ├── llm.py                model endpoints: Chat Completions + Responses API, fallback endpoints
+│   ├── readers.py            any supported file -> markdown (.md .txt .docx .doc .rtf, pictures)
+│   ├── word_docx.py, word_doc.py, docmodel.py   built-in Word readers (.docx and legacy .doc), no dependencies
+│   ├── office.py             optional LibreOffice conversion for .doc / .rtf
+│   ├── diagrams.py           picture diagrams -> searchable text (vision model, SVG labels, OCR)
+│   ├── diagram_baseline.py   optional: the systems and subsystems a diagram shows -> baseline candidates
 │   ├── embedders/
 │   │   ├── base.py           Embedder interface (embed_documents / embed_query)
 │   │   ├── local_st.py       sentence-transformers, from local folder, offline
-│   │   └── openai_compat.py  any OpenAI-compatible /v1/embeddings endpoint
+│   │   ├── openai_compat.py  any OpenAI-compatible /v1/embeddings endpoint (ESAM_EMBED_BASE_URL)
+│   │   └── prefixes.py       query/passage prefixes by model family (BGE, E5)
 │   ├── vectorstores/
 │   │   ├── base.py           VectorStore interface + model-mismatch guard
 │   │   └── pgvector_store.py PostgreSQL + pgvector, HNSW + iterative filtered scans
@@ -66,11 +73,15 @@ esam/
 │   ├── intake.py, srs.py, standards.py      document intake, SRS checks + evidence pack, standards library
 │   ├── environment.py, usage.py, tasks.py, runs.py   environments, usage ledger, task list, run folders
 ├── cockpit/                  SE Cockpit (FastAPI + one offline HTML page; snapshot export)
-├── crew/                     the agents: main.py, crew.py, custom_tools.py, config/agents.yaml, config/tasks.yaml
+├── crew/                     the agents: main.py, crew.py, llm.py (fallback endpoints), custom_tools.py, config/*.yaml;
+│                             graph_admin.py (`python -m crew.main graph status | reload | reset`),
+│                             ingest_admin.py (`python -m crew.main ingest status | reload | reset`)
 ├── config/environments/      environment profiles (local, pilot-il5, full-janusgraph); secrets by name only
 ├── data/
 │   ├── baseline/vehicle_decomposition.yaml   SE-owned structure (ESAM YAML format)
-│   ├── documents/*.md                        synthetic ICD / SDD / SRS documents (MIL-STD-498 names)
+│   ├── documents/*.md                        synthetic ICD / SDD / SRS / SSDD documents (MIL-STD-498 names)
+│   ├── documents/originals/                  Word / picture files as delivered (kept by the intake pipeline);
+│   │                                         two sample .doc files with pictures and drawn diagrams
 │   ├── ontology/esam_ontology.yaml           the SE vocabulary and rules
 │   ├── standards/                            standards library (clause text + catalogue with source hashes)
 │   └── briefs/                               SE authoring briefs for SRS drafting
@@ -105,7 +116,7 @@ python lessons/04_graph/load_graph.py --reset
 python lessons/04_graph/queries.py
 python lessons/05_hybrid/hybrid.py "If we change the EBC1 message period, what is affected?"
 
-pytest -q                                           # 131 tests
+pytest -q                                           # ~200 tests (those needing the database or CrewAI skip without them)
 
 pip install -r requirements-crew.txt                # the agents (CrewAI) and run logs
 uvicorn cockpit.app:app --port 8080                 # SE Cockpit at http://127.0.0.1:8080
@@ -123,15 +134,102 @@ ESAM_PG_DSN=postgresql://esam_user:esam_local_only@127.0.0.1:5433/esam_pilot
 # ESAM pilot VM-1
 ESAM_PG_DSN=postgresql://esam_user:***@<vm-1>:5432/esam_pilot
 
-# If the gateway ever offers embeddings (or you host vLLM / TEI)
-ESAM_EMBED_BACKEND=openai
-ESAM_OPENAI_BASE_URL=https://<gateway>/v1
-ESAM_OPENAI_EMBED_MODEL=<name>
 ```
+
+## Choosing the embeddings model and where it runs
+
+Two settings decide it (`.env`, or the environment):
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `ESAM_EMBED_MODEL` | **which model**: a Hugging Face id when it runs locally, or the name the endpoint serves | `BAAI/bge-base-en-v1.5` |
+| `ESAM_EMBED_BASE_URL` | **where it runs**: the URL of an OpenAI-compatible endpoint, e.g. `https://host/v1`; requests go to `<URL>/embeddings`, as on main (a URL already ending in `/embeddings` means the same). Unset = on this machine, from `models/` | unset |
+| `ESAM_EMBED_API_KEY` | the endpoint's key, if it wants one | unset |
+
+```bash
+# Local model (default). Another local model: stage it, then name it.
+# folder: models/bge-small-en-v1.5 (or ESAM_EMBED_MODEL_DIR)
+ESAM_EMBED_MODEL=BAAI/bge-small-en-v1.5
+
+# An endpoint: setting the URL is the switch. Ollama, TEI, vLLM, OpenAI, a gateway route:
+ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
+ESAM_EMBED_MODEL=nomic-embed-text
+```
+
+`python -m esamkit.environment` shows the model and URL in effect and, for an endpoint, makes one real
+embedding call to confirm the model answers and report its dimension. The crew's profiles carry the same two
+settings by name (`embeddings.model_env`, `embeddings.base_url_env` in `config/environments/*.yaml`).
+Optional: `ESAM_EMBED_DIMENSIONS`, `ESAM_EMBED_BATCH_SIZE`, `ESAM_EMBED_QUERY_PREFIX` / `_DOC_PREFIX`
+(all in `.env.example`). The older names (`ESAM_EMBED_MODEL_ID`, `ESAM_OPENAI_BASE_URL`,
+`ESAM_OPENAI_EMBED_MODEL`, `ESAM_EMBED_BACKEND=openai`) still work.
 
 **Changing the embedding model means re-embedding everything.** Each collection records the
 model id and dimension it was built with and refuses to open with a different one
 (`ModelMismatchError`). Use a new `ESAM_COLLECTION` or `ingest.py --reset`.
+
+## Word documents and picture diagrams
+
+Everything that reads a document goes through `esamkit/readers.py`, which turns the file into the same
+markdown the rest of ESAM already understands:
+
+| File | Read by |
+|---|---|
+| `.md`, `.txt` | as is |
+| `.docx` | built-in reader (headings, lists, tables, bold requirement ids, captions, pictures, diagrams drawn with Word shapes) |
+| `.doc` (Word 97-2003) | LibreOffice when installed (`ESAM_DOC_CONVERTER=auto`), otherwise the built-in binary reader; both give the same requirements, test cases, pictures and drawings on the test corpus |
+| `.rtf` | LibreOffice, otherwise text only |
+| `.png .jpg .gif .webp .bmp .tif .svg` | a picture diagram, see below |
+
+```bash
+python -m esamkit.readers path/to/SRS-PWR-001.doc     # print the markdown ESAM would index
+```
+
+A **picture diagram** (a picture file, or one embedded in a Word document) becomes a quoted block in the
+markdown, so it is chunked, embedded and searchable with its section. `ESAM_DIAGRAMS` sets how it is read:
+`auto` (a vision model describes it **if** `ESAM_VISION_MODEL` is set; results are cached by picture
+content), `local` (never sent to a model: SVG labels, text typed in Word shapes, OCR if `tesseract` is
+installed), `off` (name and caption only). With no vision model configured, no picture leaves the machine.
+
+**Complex Word files.** Both Word readers keep a picture where it stands in the text, whatever way Word holds
+it: inline, floating (the text wraps around it), inside a table cell (the cell then says `(Picture 3, below)`
+and the picture follows the table), or used several times. A diagram **drawn in Word** with shapes and text
+boxes becomes one drawing whose text is read row by row, left to right, not in the order the file happens to
+store the shapes. Logos in page headers and footers are left out, and the built-in `.doc` reader says so. From a
+`.doc` it also takes out EMF/WMF drawings and bitmaps (a vision model or OCR needs LibreOffice to render EMF/WMF).
+If the drawing layer of a `.doc` cannot be followed, its pictures are still found by scanning and placed at the
+end, with a note in the conversion report. Not tried: a `.doc` written by Microsoft Word itself (the fixtures
+are written by LibreOffice) and embedded OLE objects such as Visio drawings.
+
+The sample corpus has two such documents: `data/documents/originals/SSDD-SUSP-001.doc` and `SSDD-PWR-001.doc`,
+system-level design descriptions attached to `SYS-SUSP` and `SYS-PWR`, with the markdown Pipeline A read from
+them beside the other documents. Try `python -m esamkit.readers data/documents/originals/SSDD-SUSP-001.doc`.
+
+A diagram can also **populate the vehicle baseline**: with `ESAM_DIAGRAM_BASELINE=propose` (or `--diagram-baseline
+propose` on a review) the systems and subsystems a picture shows that the baseline lacks are listed for the SE;
+with `apply` they are added on ingest as `status: candidate` entries. Off by default. See `crew/README.md`,
+"Populating the vehicle baseline from a diagram".
+
+What a Word document must contain to be recognised is the same as for markdown: a title
+`<ID> — <name>` (Title or Heading 1 style) and the `Document | Type | Revision | Subsystem` table.
+
+## Model endpoints: Responses API and fallbacks
+
+The chat model (`esamkit/llm.py`) speaks Chat Completions (`ESAM_REASONING_API=chat`, default), the Responses
+API (`responses`), or tries chat and then responses on the same endpoint (`auto`). Fallback endpoints are
+tried in order when a call fails in a way another endpoint could fix (unreachable, 404/405, 408/429, 5xx,
+rejected key); each inherits what it leaves unset:
+
+```bash
+# same endpoint, the Responses API
+ESAM_REASONING_FALLBACK_1_API=responses
+# another endpoint
+ESAM_REASONING_FALLBACK_2_BASE_URL=https://second-gateway/v1
+```
+
+The coding model is separate, with its own endpoint: `ESAM_CODING_BASE_URL`, `ESAM_CODING_API_KEY`,
+`ESAM_CODING_MODEL`, `ESAM_CODING_API` and `ESAM_CODING_FALLBACK_<n>_*`. The crew's profiles
+(`config/environments/*.yaml`) name these same variables, so `.env` is the one place to set them
+(`crew/README.md`, "Model endpoints"). `ESAM_CHAT_*`, the older name of `ESAM_REASONING_*`, is still read.
 
 To add a backend, implement the interface and add one branch to `factory.py`. For a different
 vector database, that's the five methods of `VectorStore`; for JanusGraph, the methods of

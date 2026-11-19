@@ -3,7 +3,7 @@ Coverage — does the document a question NEEDS actually exist?
 
 Vector search can't answer that: a document that doesn't exist has no
 vectors, so search just returns the closest thing that DOES exist. Ask "how
-is SRS-BRK-011 tested?" with no test description loaded and the best match
+is SW-SRS-BRK-011 tested?" with no test description loaded and the best match
 is the requirement itself, which reads like an answer. A model handed that
 chunk will happily write a plausible test procedure.
 
@@ -50,9 +50,24 @@ def mentioned_subsystems(question: str, subsystems: list[dict]) -> list[str]:
 
 
 def missing_documents(graph: GraphStore, subsystem_eids: list[str], doc_types: list[str]) -> list[dict]:
-    """[{eid, doc_type}] for every (subsystem, type) pair with no such document."""
+    """[{eid, doc_type}] for every (subsystem, type) pair with no such document.
+    A system-level document (an SSDD attached to the subsystem's
+    system or to the vehicle) counts: it covers the subsystems under it."""
     missing = []
     for t in doc_types:
         gaps = {r["eid"] for r in graph.artifact_gaps(t)}
-        missing += [{"eid": e, "doc_type": t} for e in subsystem_eids if e in gaps]
+        for e in subsystem_eids:
+            if e in gaps and not _held_above(graph, e, t):
+                missing.append({"eid": e, "doc_type": t})
     return missing
+
+
+def _held_above(graph: GraphStore, eid: str, doc_type: str) -> bool:
+    """Does something this subsystem is part of (its system, the vehicle) have a document of this type?"""
+    try:
+        above = {r["eid"] for r in graph.ancestors(eid)}
+        snap = graph.snapshot()
+    except Exception:
+        return False
+    return any(e["type"] == "HAS_ARTIFACT" and e["from_eid"] in above
+               and (e.get("props") or {}).get("artifact_type") == doc_type for e in snap["edges"])

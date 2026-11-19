@@ -4,8 +4,12 @@ ESAM crew runner.
 
     python -m crew.main env [--env pilot-il5]     # step 0: environment check + Environment Engineer's report
 
-    # Pipeline A: a document → verified ingestion, with an SE approval in the middle
+    # Pipeline A: a document → verified ingestion, with an SE approval in the middle.
+    # The document may be markdown, Word (.docx, .doc) or a picture of a diagram.
     python -m crew.main review path/to/STD-BRK-001.md   # A1 ontology check, A2 review → STOP
+    python -m crew.main review path/to/ICD-BRK-002.docx
+    python -m crew.main review topology.png --set id=ICD-BRK-003 --set name="Brake bus topology" \
+                                            --set revision=A --set attached_to=SUB-BRK-ECU
     python -m crew.main inbox                           # the same for every file in work/inbox/
     python -m crew.main runs                            # runs and their state
     python -m crew.main approve <run> [--note ...]      # the SE's decision → A3 ingest, A4 verify
@@ -22,6 +26,15 @@ ESAM crew runner.
     python -m crew.main tasks add ask "Which brake requirements have no test?"
     python -m crew.main tasks list | show <id> | cancel <id> | requeue <id>
     python -m crew.main worker [--once]
+
+    # The graph (derived from the baseline and its documents): rebuild or empty it. No agent, no model.
+    python -m crew.main graph status | reload | reset --yes
+    # The search store (the embedded chunks of the documents): re-ingest every document, or empty it. No agent.
+    python -m crew.main ingest status | reload [--only ID ...] [--fresh] [--with-graph] | reset --yes
+
+    # Picture diagrams can also populate the vehicle baseline: the systems and subsystems a diagram shows
+    python -m crew.main review architecture.png --set id=SSDD-LTV-002 ... --diagram-baseline propose   # list them
+    python -m crew.main review architecture.png --set id=SSDD-LTV-002 ... --diagram-baseline apply     # add on approval
 
     # Interactive: a question answered by the three agents
     python -m crew.main ask "Which brake requirements have no test?"
@@ -52,6 +65,7 @@ sys.path.insert(0, str(ROOT))
 from esamkit.environment import apply_telemetry, inspect, load_profile, resolve  # noqa: E402
 from esamkit.usage import UsageLedger  # noqa: E402
 
+from crew import graph_admin, ingest_admin  # noqa: E402
 from crew.terminal_log import logged  # noqa: E402
 
 RUNS = ROOT / "work" / "runs"
@@ -100,11 +114,14 @@ def cmd_env(args) -> int:
     from crew.crew import EsamCrew
 
     t = time.perf_counter()
-    crew = EsamCrew(profile["name"], ledger, report).environment_crew()
+    esam_crew = EsamCrew(profile["name"], ledger, report)
+    crew = esam_crew.environment_crew()
     result = crew.kickoff(inputs={"environment": profile["name"],
                                   "needed_tools": ", ".join(report["capabilities"]["enabled"]) or "none"})
     usage = record_crew_usage(ledger, result, resolve(profile)["roles"]["reasoning"]["model"], "environment_engineer")
-    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000), detail={"command": "env", **usage})
+    routes = endpoint_report(esam_crew.llm)
+    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000),
+                  detail={"command": "env", **usage, **({"endpoints": routes} if routes else {})})
     (folder / "environment_report.md").write_text(str(result.raw))
     print(f"\n{result.raw}\n\nSaved: {folder}\nUsage: {usage}")
     return 0 if "GREEN LIGHT" in str(result.raw) else 1
@@ -143,9 +160,27 @@ def kickoff(crew, pipeline: str, wb, folder: Path, ledger: UsageLedger, inputs: 
     for spec_name, out in zip(crew.PIPELINES[pipeline]["tasks"], result.tasks_output):
         (folder / f"{spec_name}.md").write_text(str(out.raw))
     usage = record_crew_usage(ledger, result, crew.llm.model.removeprefix("openai/"), f"crew:{pipeline}")
-    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000), detail={"command": pipeline, **usage})
+    routes = endpoint_report(crew.llm)
+    ledger.record("run", duration_ms=round((time.perf_counter() - t) * 1000),
+                  detail={"command": pipeline, **usage, **({"endpoints": routes} if routes else {})})
     print(f"\nUsage: {usage}")
     return str(result.raw)
+
+
+def endpoint_report(llm) -> dict:
+    """Which model endpoints served the run and which failed, when the profile
+    lists fallbacks (crew/llm.py). Empty for a single endpoint."""
+    summary = getattr(llm, "failover_summary", None)
+    if summary is None:
+        return {}
+    rep = summary()
+    if rep["failures"]:
+        print("\nModel endpoints:")
+        for name, calls in rep["served"].items():
+            print(f"  served {calls:>3} call(s): {name}")
+        for f in rep["failures"]:
+            print(f"  FAILED: {f['route']}: {f['error'][:160]}")
+    return rep
 
 
 def find_run(run: str) -> Path:
@@ -165,31 +200,66 @@ def _parse_sets(pairs: list[str]) -> dict:
     out = {}
     for pair in pairs or []:
         key, _, value = pair.partition("=")
-        if key not in ("id", "name", "type", "revision", "attached_to") or not value:
-            sys.exit(f"--set {pair!r}: use id=, name=, type=, revision= or attached_to=")
+        if key not in ("id", "name", "type", "revision", "attached_to", "part") or not value:
+            sys.exit(f"--set {pair!r}: use id=, name=, type=, revision=, attached_to= or part= (e.g. part='2 of 3')")
         out[key] = value
     return out
 
 
 @logged("review", LAST_RUN, LOGS)
 def review_one(path: Path, args) -> int:
-    from esamkit.intake import read_header
+    import tempfile
 
-    entry = {**read_header(path.read_text()), **_parse_sets(args.set)}
-    if "id" in entry:
-        entry["file"] = f"{entry['id']}.md"
-    if not entry.get("id"):
-        print(f"{path.name}: no '# <ID> — <name>' title line, so ESAM can't tell what it is. "
-              "Add it, or give --set id=... name=...")
-        return 1
-    profile, report, EsamCrew = prepare(args.env, "review")
-    run_id, folder, ledger = new_run(f"review_{entry['id']}", profile["name"])
-    crew = EsamCrew(profile["name"], ledger, report)
-    check_tools(crew, "review")
-    (folder / "incoming").mkdir()
-    shutil.copy2(path, folder / "incoming" / entry["file"])
+    from esamkit.environment import settings_for
+    from esamkit.intake import conversion_attention, receive
+    from esamkit.readers import UnsupportedDocument
+
+    # Read the file once, before the run exists: a Word or picture file becomes
+    # markdown here (its diagrams described), and that markdown is what the
+    # agents review and the SE approves.
+    with tempfile.TemporaryDirectory(prefix="esam-incoming-") as tmp:
+        try:
+            got = receive(path, Path(tmp) / "incoming", settings_for(load_profile(args.env)), _parse_sets(args.set),
+                          diagram_baseline=getattr(args, "diagram_baseline", None))
+        except UnsupportedDocument as e:
+            print(f"{path.name}: {e}")
+            return 1
+        entry = got["entry"]
+        if not entry.get("id"):
+            print(f"{path.name}: no '<ID> — <name>' title (a '# <ID> — <name>' line in markdown, the Title or first "
+                  "heading in Word), so ESAM can't tell what it is. Add it, or give --set id=... --set name=...")
+            return 1
+        profile, report, EsamCrew = prepare(args.env, "review")
+        run_id, folder, ledger = new_run(f"review_{entry['id']}", profile["name"])
+        crew = EsamCrew(profile["name"], ledger, report)
+        check_tools(crew, "review")
+        shutil.copytree(Path(tmp) / "incoming", folder / "incoming")
     state = {"run_id": run_id, "kind": "intake", "state": "reviewing", "created": _now(),
-             "environment": profile["name"], "source": str(path), "document": f"incoming/{entry['file']}", "entry": entry}
+             "environment": profile["name"], "source": str(path), "document": got["document"], "entry": entry}
+    if got["conversion"]:
+        state.update(original=got["original"], conversion=got["conversion"])
+        (folder / "conversion.json").write_text(json.dumps(got["conversion"], indent=1, ensure_ascii=False))
+        print(f"Converted {path.name} to markdown ({got['conversion']['converter']}); "
+              f"{len(got['conversion']['pictures'])} picture(s). The review is of {folder / got['document']}.")
+        for line in conversion_attention(got["conversion"])[1:]:
+            print(f"  {line}")
+    if got["diagram_baseline"] != "off":
+        # The systems and subsystems the document's diagrams show (esamkit/diagram_baseline.py). "apply" adds
+        # them to the baseline when the SE approves the run; "propose" only reports them.
+        from esamkit.diagram_baseline import summary as proposal_summary
+        lines = proposal_summary(got["baseline_proposal"]) or ["The document has no pictures to analyse."]
+        state["diagram_baseline"] = {"mode": got["diagram_baseline"], "apply": got["diagram_baseline"] == "apply",
+                                     "proposal": got["baseline_proposal"], "summary": lines}
+        on_approval = ("On approval they are added to the baseline as candidates (python -m crew.main approve <run> "
+                       "--no-apply-baseline to leave the baseline alone)." if got["diagram_baseline"] == "apply" else
+                       "Nothing will be added (mode: propose). To add them on approval: approve <run> --apply-baseline.")
+        (folder / "baseline_proposal.md").write_text(
+            f"# Systems and subsystems read from the diagrams of {entry['id']}\n\n" + "\n".join(lines) + f"\n\n{on_approval}\n")
+        print("Diagram analysis for the vehicle baseline:")
+        for line in lines:
+            print(f"  {line}")
+        if (got["baseline_proposal"] or {}).get("additions"):
+            print(f"  {on_approval}")
     wb = _workbench(profile, folder, state)
     wb.save()
     print(f"Run {run_id}: reviewing {entry['id']} (usage → {ledger.sink})")
@@ -213,10 +283,12 @@ def cmd_review(args) -> int:
 
 
 def cmd_inbox(args) -> int:
+    from esamkit.readers import SUPPORTED, document_files
+
     INBOX.mkdir(parents=True, exist_ok=True)
-    files = sorted(INBOX.glob("*.md"))
+    files = document_files(INBOX)
     if not files:
-        print(f"Inbox is empty: drop documents (.md) into {INBOX}")
+        print(f"Inbox is empty: drop documents ({', '.join(SUPPORTED)}) into {INBOX}")
         return 0
     rc = 0
     for f in files:
@@ -253,6 +325,15 @@ def cmd_approve(args) -> int:
     check_tools(crew, "ingest")
     state["approval"] = {"decision": "approved", "by": args.by, "at": _now(), "note": args.note,
                          "against_recommendation": state.get("recommendation") != "INGEST"}
+    if getattr(args, "apply_baseline", None) is not None:        # the SE's choice overrides the run's mode
+        if args.apply_baseline and not state.get("diagram_baseline"):
+            sys.exit("--apply-baseline: this run did not analyse its diagrams. Review the document again with "
+                     "--diagram-baseline propose (or apply).")
+        if state.get("diagram_baseline"):
+            state["diagram_baseline"]["apply"] = bool(args.apply_baseline)
+    if (state.get("diagram_baseline") or {}).get("apply"):
+        state["approval"]["baseline_additions_approved"] = [
+            a["id"] for a in (state["diagram_baseline"].get("proposal") or {}).get("additions") or []]
     wb = _workbench(profile, folder, state)
     wb.save()
     entry = state["entry"]
@@ -301,6 +382,16 @@ def cmd_undo(args) -> int:
     wb.save()
     print(f"Undone {state['run_id']}: {json.dumps(res, default=str)}")
     return 0
+
+
+def cmd_graph(args) -> int:
+    """Reload or reset the graph (crew/graph_admin.py). Not a pipeline: no agent, no model, no run folder."""
+    return graph_admin.run(args)
+
+
+def cmd_ingest(args) -> int:
+    """Reload or reset the search store (crew/ingest_admin.py). Not a pipeline: no agent, no chat model, no run folder."""
+    return ingest_admin.run(args)
 
 
 @logged("author", LAST_RUN, LOGS)
@@ -509,6 +600,10 @@ def main() -> None:
             p.add_argument("file")
         p.add_argument("--set", action="append", metavar="KEY=VALUE",
                        help="supply a field the document doesn't state (revision=A, attached_to=SUB-...)")
+        p.add_argument("--diagram-baseline", choices=["off", "propose", "apply"], default=None,
+                       help="analyse the document's picture diagrams for systems and subsystems: propose = list what "
+                            "the baseline lacks; apply = also add them, as candidates, when the run is approved "
+                            "(default: ESAM_DIAGRAM_BASELINE / the profile's documents.diagram_baseline, normally off)")
     add("runs", cmd_runs, "list pipeline runs", env=False)
     for name, fn in (("approve", cmd_approve), ("reject", cmd_reject), ("undo", cmd_undo)):
         p = add(name, fn, f"{name} a run")
@@ -517,6 +612,10 @@ def main() -> None:
         p.add_argument("--note", default="", required=(name == "reject"))
         if name == "approve":
             p.add_argument("--against-recommendation", action="store_true")
+            p.add_argument("--apply-baseline", dest="apply_baseline", action="store_true", default=None,
+                           help="add the systems and subsystems the run read from the diagrams to the baseline")
+            p.add_argument("--no-apply-baseline", dest="apply_baseline", action="store_false",
+                           help="ingest the document but leave the vehicle baseline's structure alone")
     tk = add("tasks", cmd_tasks, "the task list: add, list, show, cancel, requeue")
     tk.add_argument("action", choices=["add", "list", "show", "cancel", "requeue"])
     tk.add_argument("rest", nargs="*", help="add: <kind> <file | brief | run id | question>;  show/cancel/requeue: <task id>")
@@ -533,6 +632,10 @@ def main() -> None:
     w.add_argument("--kinds", nargs="*", help="only these kinds")
     b = add("author", cmd_author, "Pipeline B: draft an SRS from an SE's brief, verified, with an evidence pack")
     b.add_argument("brief")
+    g = add("graph", cmd_graph, "the graph: status, reload (rebuild from the baseline), reset (empty it)")
+    graph_admin.add_arguments(g)
+    i = add("ingest", cmd_ingest, "the search store: status, reload (re-ingest the baseline's documents), reset (empty it)")
+    ingest_admin.add_arguments(i)
     a = add("ask", cmd_ask, "answer a question with the three agents")
     a.add_argument("question")
     args = ap.parse_args()

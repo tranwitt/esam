@@ -24,7 +24,7 @@ still there; it lives in the `esam-pgdata` volume, which survives reboots.
 ## 3. Check everything works (optional, 15 s)
 
 ```bash
-pytest -q                          # expect: 131 passed
+pytest -q                          # expect: no failures (about 200 tests)
 ```
 
 ## 4. Study
@@ -92,16 +92,16 @@ Jot notes per lesson as you go, anywhere you like. A simple option is a file nex
 mkdir -p notes && $EDITOR notes/lesson01.md
 ```
 
-## 6. When you're ready for a session with Claude
+## 6. When you're ready for a session with an AI coding assistant
 
-Open Claude Code in the **parent** folder (that's where the project memory lives):
+Open your AI coding assistant in the **parent** folder (that's where the project memory lives):
 
 ```bash
 cd /home/dev/Documents/kirahi/aidev
-claude
+# then start your assistant's command-line tool here
 ```
 
-Claude has a reminder to ask for your **Lesson 01 notes** first. Paste them, or say where the file
+The assistant has a reminder to ask for your **Lesson 01 notes** first. Paste them, or say where the file
 is (e.g. `esam/notes/lesson01.md`). Status, credentials and pending tasks are all in
 `SESSION_HANDOFF.md` if you need them.
 
@@ -123,5 +123,5 @@ deactivate                         # leave the Python venv
 | `connection refused` from a lesson script | The database isn't running; do step 2 |
 | `No model found in .../models/...` | The model folder is missing; re-run `python lessons/00_setup/stage_model.py` (needs internet, ~440 MB) |
 | `python: command not found` / import errors | You skipped `source .venv/bin/activate` (step 1) |
-| Lesson 05 prints a prompt instead of an answer | `esam/.env` is missing the `ESAM_CHAT_*` settings; see `SESSION_HANDOFF.md` §2 |
+| Lesson 05 prints a prompt instead of an answer | `esam/.env` is missing the `ESAM_REASONING_*` settings; see `SESSION_HANDOFF.md` §2 |
 | You want a completely fresh database | `docker compose down -v && docker compose up -d --wait`, then re-run the ingest/load steps in 03 and 04 |

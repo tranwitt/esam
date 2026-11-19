@@ -11,7 +11,7 @@ testable without any server running (see tests/test_baseline.py).
 Edge direction conventions (same as ESAM_Pilot_Implementation_v1.0.md):
 
     child     ──PART_OF──────────►  parent          (Subsystem -> System)
-    owner     ──HAS_ARTIFACT─────►  DesignArtifact  (Subsystem -> ICD)
+    owner     ──HAS_ARTIFACT─────►  DesignArtifact  (Subsystem -> ICD; Vehicle or System -> SSDD)
     producer  ──INTERFACES_WITH──►  consumer        (Brake ECU -> backbone)
 
 Direction matters. "Walk DOWN the WBS" means following PART_OF edges
@@ -61,14 +61,17 @@ class Baseline:
         index = {}
         for art in self.artifacts:
             owner = art["attached_to"]
-            # The owner may be a Subsystem; its WBS code is its System's code.
-            system = parent_of.get(owner, owner)
+            # A Subsystem has no WBS code of its own: it takes its System's.
+            # A Vehicle or System (the owner of an SSDD) has its own.
+            system = owner if self.vertex(owner).props.get("wbs_code") else parent_of.get(owner, owner)
             index[art["file"]] = {
                 "artifact_id": art["id"],
                 "artifact_type": art["type"],
                 "title": art["name"],
                 "revision": art.get("revision", ""),
-                "subsystem_id": owner,
+                "subsystem_id": owner,                      # the owner: a subsystem, or the vehicle / a system for an SSDD
+                "owner_class": self.vertex(owner).label,
+                **({"part": str(art["part"])} if art.get("part") else {}),
                 "wbs_code": self.vertex(system).props.get("wbs_code", ""),
             }
         return index
@@ -76,7 +79,7 @@ class Baseline:
 
 # Optional subsystem / function fields copied onto the vertex when present.
 _SUB_FIELDS = ("safety_critical", "safety_classification", "os_class", "aliases",
-               "j1939_source_address", "tsn_profile", "repo_url", "jira_component")
+               "j1939_source_address", "tsn_profile", "repo_url", "jira_component", "status", "derived_from")
 
 
 def load_baseline(path: Path) -> Baseline:
@@ -98,8 +101,10 @@ def load_baseline(path: Path) -> Baseline:
             add("Variant", {"id": var["id"], "name": var["name"], "wbs_code": var["wbs_code"],
                             "role": var.get("role", "variant")}, fam["id"])
             for sysm in var.get("systems", []):
-                add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm["wbs_code"],
-                               "universality": sysm.get("universality", "universal")}, var["id"])
+                # A candidate system (read from a diagram, awaiting an SE) may not have its WBS code yet.
+                add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm.get("wbs_code", ""),
+                               "universality": sysm.get("universality", "universal"),
+                               **{k: sysm[k] for k in ("status", "derived_from") if k in sysm}}, var["id"])
                 for sub in sysm.get("subsystems", []):
                     # No invented WBS code for subsystems (the old script made up
                     # "<system>.sub"). A subsystem's WBS code is its System's,
@@ -127,7 +132,8 @@ def load_baseline(path: Path) -> Baseline:
     for art in data.get("artifacts", []):
         vertices.append(Vertex("DesignArtifact", {
             "id": art["id"], "name": art["name"], "artifact_type": art["type"],
-            "revision": art.get("revision", ""), "file": art["file"]}))
+            "revision": art.get("revision", ""), "file": art["file"],
+            **({"part": str(art["part"])} if art.get("part") else {})}))      # "2 of 3": one part of a multi-part document
         edges.append(Edge(art["attached_to"], art["id"], "HAS_ARTIFACT",
                           {"artifact_type": art["type"]}))
 

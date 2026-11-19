@@ -245,6 +245,7 @@ ORDER BY wbs_code, eid
 UNTESTED_REQUIREMENTS = """
 SELECT r.properties->>'id'              AS eid,
        r.properties->>'name'            AS name,
+       COALESCE(r.properties->>'level', CASE WHEN left(r.properties->>'id', 3) = 'SW-' THEN 'software' ELSE 'system' END) AS level,
        r.properties->>'subsystem'       AS subsystem,
        r.properties->>'source_artifact' AS document
 FROM graph_vertices r
@@ -268,10 +269,19 @@ ORDER BY eid
 TRACE_SUMMARY = """
 SELECT s.properties->>'id'   AS eid,
        s.properties->>'name' AS name,
-       (s.properties->>'safety_critical')::boolean AS safety_critical,
+       s.label               AS label,
+       COALESCE((s.properties->>'safety_critical')::boolean, false) AS safety_critical,
        count(r.id)           AS requirements,
        count(r.id) FILTER (WHERE EXISTS (
-           SELECT 1 FROM graph_edges v WHERE v.to_id = r.id AND v.type = 'VERIFIES')) AS verified
+           SELECT 1 FROM graph_edges v WHERE v.to_id = r.id AND v.type = 'VERIFIES')) AS verified,
+       -- the same two numbers, split by the requirement's level (traceability.classify). A requirement loaded
+       -- before levels existed has none: it is read from its id (SW-… software, anything else system).
+       count(r.id) FILTER (WHERE COALESCE(r.properties->>'level', CASE WHEN left(r.properties->>'id', 3) = 'SW-' THEN 'software' ELSE 'system' END) = 'system') AS system_requirements,
+       count(r.id) FILTER (WHERE COALESCE(r.properties->>'level', CASE WHEN left(r.properties->>'id', 3) = 'SW-' THEN 'software' ELSE 'system' END) = 'system' AND EXISTS (
+           SELECT 1 FROM graph_edges v WHERE v.to_id = r.id AND v.type = 'VERIFIES')) AS system_verified,
+       count(r.id) FILTER (WHERE COALESCE(r.properties->>'level', CASE WHEN left(r.properties->>'id', 3) = 'SW-' THEN 'software' ELSE 'system' END) = 'software') AS software_requirements,
+       count(r.id) FILTER (WHERE COALESCE(r.properties->>'level', CASE WHEN left(r.properties->>'id', 3) = 'SW-' THEN 'software' ELSE 'system' END) = 'software' AND EXISTS (
+           SELECT 1 FROM graph_edges v WHERE v.to_id = r.id AND v.type = 'VERIFIES')) AS software_verified
 FROM graph_vertices s
 LEFT JOIN graph_edges a    ON a.to_id = s.id AND a.type = 'ALLOCATED_TO'
 LEFT JOIN graph_vertices r ON r.id = a.from_id AND r.label = 'Requirement'

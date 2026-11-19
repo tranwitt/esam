@@ -24,7 +24,14 @@ a1_ontology_check:
     safety-critical, whether it replaces an earlier revision, and which ontology
     rule (if any) requires this document for the subsystem. Run check_coverage
     for the subsystem to show which required documents are present or MISSING
-    before this one. Use ontology_lookup when a term needs explaining. Report
+    before this one. A system-level document (an SSDD) may instead be attached
+    to the vehicle system (V-...) or to one system (SYS-...): the tool result's
+    subsystem.class says which. Then say what it is attached to, and skip
+    check_coverage, which is only for subsystems. An owner may have several
+    documents of one type: when the tool result lists same_type_documents, say
+    that this document is in addition to them (it replaces one only when it
+    has the same id). When the result has a part, say which part this is, which
+    parts will be present after ingestion and which are still missing. Use ontology_lookup when a term needs explaining. Report
     every ontology finding verbatim; an error means the document cannot be
     ingested as it stands, and you name the field to fix.
   expected_output: >
@@ -40,14 +47,35 @@ a2_document_review:
     be stricter; say for each test case MATCHES, STRICTER, WEAKER or UNCLEAR
     and quote both sides. Note test cases whose cited requirement is already
     verified elsewhere, and the subsystem's requirements that remain untested
-    after this document. For an SRS, check every requirement is a single,
+    after this document. For an SRS, every requirement is a system
+    requirement (id SYS-SRS-..., what the subsystem as a whole must do) or a
+    software requirement (id SW-SRS-..., what the software must do); the id
+    decides, and an id with no marker (SRS-...) is read as a system
+    requirement. Report the two as separate lists with their counts (levels).
+    Report every issue where an id disagrees with the requirement's Level:
+    line or its wording, giving the id it should have, and every id that
+    is not an SRS- id. Say which system requirement each software
+    requirement traces to (traces_to), and which system requirements no
+    software requirement traces to (traced_by empty). If review_document returns baseline_from_diagrams, the
+    document's diagrams were analysed for the vehicle baseline: list every
+    system and subsystem it would add (id, name, where it goes, which picture)
+    and what an SE still has to supply for each, say whether they will be
+    added on approval (added_on_approval), and name anything not proposed and
+    why. Judge each addition against the picture's description: question a
+    name that looks like a signal, a function or a duplicate of an existing
+    entry. They are candidates for the SE to confirm, never facts. Check every requirement is a single,
     testable 'shall' with a measurable value, and flag any that is not. Use
     search_documents or verified_by only to confirm something in the
     document against an existing one; cite document ids. Report the tool's
-    issues list verbatim.
+    issues list verbatim. If the tool reports a conversion (the document
+    arrived as a Word file or a picture), say what it was converted from and
+    how, repeat every line of conversion_attention verbatim, and list each
+    picture with how it was read; never present a model's description of a
+    diagram as verified fact.
   expected_output: >
     A markdown review: a table per test case (or requirement) with the
-    comparison and verdict, the issues, and what remains untested.
+    comparison and verdict, the issues, what remains untested, and (for a
+    converted document) the conversion and its pictures.
   agent: researcher
 
 a2_approval_request:
@@ -56,6 +84,9 @@ a2_approval_request:
     {document} enters the baseline (run {run_id}). From the classification and
     the review: what was checked, what passed, what failed, and anything a human
     must decide. Do not repeat tables; summarise and point to the failures.
+    If the document was converted from a Word file or a picture, say so and
+    list what the SE must check against the original (the conversion
+    attention lines), because the baseline will hold the converted text.
     Recommend INGEST only if the ontology check is OK and no test case is WEAKER
     than its requirement (or no requirement is untestable); otherwise DO NOT
     INGEST, with the fix. Remind the SE that approval is theirs: they run
@@ -162,16 +193,31 @@ b2_draft_srs:
        requirements" (3.3.1 and 3.10.1–3.10.4 as "####"), "## 4 Qualification
        provisions", "## 5 Requirements traceability", "## 6 Notes". A paragraph with
        no requirements says "No requirements." or "This paragraph has been tailored out."
-    3. Each requirement on one line "- **<id>** <one sentence with one 'shall'>", ids
-       numbered from 010 in steps of 1 or 10 (SRS-ENG-010, SRS-ENG-011, … SRS-ENG-099;
-       never SRS-ENG-001 to -009, which are document numbers), with its attribute line
-       under it, indented two spaces, for example:
-         - **SRS-ENG-020** While ABS active is 01 in EBC1, the software shall inhibit the engine compression brake.
-           Safety: SwCI 2 | Verification: T | Traces to: SSF-ENG-01, ICD-ENG-001 §2.1 | Basis: MIL-STD-882E 4.4.2
+    3. Each requirement on one line "- **<id>** <one sentence with one 'shall'>", with
+       its attribute line under it, indented two spaces. The id says what kind of
+       requirement it is, and the sentence must agree with it:
+         SYS-SRS-ENG-0NN  a SYSTEM requirement: what the subsystem as a whole must do,
+                          whatever mix of hardware and software does it. Its subject is
+                          the unit ("The Engine Control Module shall ...").
+         SW-SRS-ENG-0NN   a SOFTWARE requirement: what the software itself must do. Its
+                          subject is the software ("... the software shall ...").
+       Write a system requirement only where a source or the brief states one; do not
+       invent one to have a parent. Every software requirement that implements a
+       system requirement of this document lists that id in its Traces to. Numbers
+       run from 010 in steps of 1 or 10 and are not reused between the two kinds
+       (SYS-SRS-ENG-010, SW-SRS-ENG-020, ... -099; never -001 to -009, which are
+       document numbers). Use the document's own code in place of ENG. An id with
+       no SYS- or SW- marker is read as a system requirement and reported: always
+       write the marker. For example:
+         - **SYS-SRS-ENG-010** The Engine Control Module shall withdraw engine braking while the brake ECU reports anti-lock control active.
+           Verification: T | Traces to: ICD-ENG-001 §2.1
+         - **SW-SRS-ENG-020** While ABS active is 01 in EBC1, the software shall inhibit the engine compression brake.
+           Safety: SwCI 2 | Verification: T | Traces to: SSF-ENG-01, ICD-ENG-001 §2.1, SYS-SRS-ENG-010 | Basis: MIL-STD-882E 4.4.2
        Fields: Safety (SwCI n), Timing (value with units), Verification, Traces to, Basis.
        Safety only for safety requirements (all of 3.7), and equal to the SwCI of the
-       SSF it traces to. Verification is I, A, D or T. Traces to lists SSF ids and/or
-       source sections written "ICD-ENG-001 §2.1". Basis lists ONLY standard
+       SSF it traces to. Verification is I, A, D or T. Traces to lists SSF ids,
+       source sections written "ICD-ENG-001 §2.1", and system requirement ids of this
+       document. Basis lists ONLY standard
        clauses that standard_clause returns (never a source document); every
        safety requirement cites MIL-STD-882E.
     4. Every SSF is implemented by at least one requirement; every source section
@@ -193,6 +239,11 @@ b3_verify_srs:
     requirement, not merely exists; (3) judge it against the ISO/IEC/IEEE 29148
     characteristics by name (necessary, unambiguous, singular, verifiable,
     feasible, correct): these are names only, the standard's text is not held.
+    (4) check its kind: a SYS-SRS-... id states what the unit as a whole must
+    do, a SW-SRS-... id what the software must do; where the id and the
+    sentence disagree, renumber or reword it, and give any unmarked id its
+    marker. Say for each software requirement which system requirement it
+    traces to, and list the system requirements nothing traces to.
     Where a requirement is wrong, uncited or unsupported, correct it or remove
     it with save_draft (never add content without a source), then run
     check_draft again. Flag any hazard the requirements create or leave open.

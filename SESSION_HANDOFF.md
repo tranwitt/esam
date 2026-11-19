@@ -15,7 +15,109 @@ Day-to-day restart steps for the user are in [`HOW_TO_START.md`](HOW_TO_START.md
    lesson or corpus before moving on.
 2. Bring the database back: `docker compose up -d --wait` (stopped at the end of the 2026-10-18
    session to save resources; data is kept in volume `esam-pgdata`).
-3. Sanity check: `source .venv/bin/activate && pytest -q` (expect 131 passed).
+3. Sanity check: `source .venv/bin/activate && pytest -q` (expect no failures; DB and CrewAI tests skip without them).
+
+### Session 2026-11-15: Word + picture ingestion, embeddings endpoint, fallback endpoints, Responses API
+
+Branch `feature/word-diagrams-endpoint-failover` (not merged).
+
+- **Documents**: `esamkit/readers.py` is the one way in. `.docx` and legacy `.doc` have built-in readers
+  (`word_docx.py`, `word_doc.py`); LibreOffice is used for `.doc`/`.rtf` when installed. Pictures become text
+  blocks (`diagrams.py`): vision model if `ESAM_VISION_MODEL` is set, else SVG labels / shape text / OCR.
+  Intake converts once at `receive`, reviews the markdown, keeps the original in `data/documents/originals/`.
+- **Embeddings**: `ESAM_EMBED_MODEL` + `ESAM_EMBED_BASE_URL` (old names still read). Endpoint client is stdlib.
+- **Models**: `esamkit/llm.py` (chat | responses | auto, fallbacks with cooldown); `crew/llm.py` `FailoverLLM`.
+- **SSDD on the vehicle system**: `document_types.ssdd.attaches_to: [Vehicle, System, Subsystem]` (ontology v0.4);
+  `HAS_ARTIFACT` may start from Vehicle or System. Sample: `lessons/06_missing_document/staged/SSDD-LTV-001.md`
+  (attached to V-001; not added to the baseline). Tests: `tests/test_ssdd.py`. The Cockpit lists such documents under
+  *System-level documents* on the Dashboard (the coverage matrix stays per subsystem), in the owner's details on the
+  Graph tab, and shows each type's *Attaches to* on the Ontology tab. Checked by running the page script against a
+  stub DOM, not in a browser.
+- **Several documents of one type / parts**: `part: "n of N"` on a baseline entry (ontology v0.5), read from a
+  `Part` header column or `--set part=`. `esamkit.ontology.part_sets`; incomplete set = warning, duplicate part =
+  error. Cockpit and `check_coverage` list every document of a type. Tests: `tests/test_multipart.py`.
+- **Environment file ↔ profiles**: profiles name the `.env.example` variables (`<key>_env`, env wins when set).
+  Roles have separate endpoints: `ESAM_REASONING_*` (was `ESAM_CHAT_*`, still read), `ESAM_CODING_*`,
+  `ESAM_VISION_*`; fallbacks via `fallbacks_env`. The existing `.env` (`ESAM_CHAT_API_KEY`) keeps working.
+  `tests/test_env_file.py` fails if a profile names a variable `.env.example` lacks. Behaviour changes: the local
+  profile no longer sends pictures to a model unless `ESAM_VISION_MODEL` is set; pilot profiles follow
+  `ESAM_EMBED_BASE_URL` / `ESAM_DIAGRAMS` when set (they used to ignore them).
+- **Embeddings endpoint vs main** (main used the OpenAI SDK; the branch uses urllib): fixed the wrong model name
+  sent under a profile when the endpoint is configured with the older `ESAM_OPENAI_*` names; requests now send
+  `User-Agent: ESAM/1.0` (not `Python-urllib`); two retries on passing failures; `.env` values may be followed by
+  `# comment`. Still different from main on purpose: no `Authorization` header when no key is set (the SDK sent
+  `Bearer unused`), and BGE/E5 models served by an endpoint get their query/passage prefixes.
+- **Embeddings endpoint is called as on main**: through the OpenAI SDK (`OpenAI(base_url, api_key or "unused")`,
+  `embeddings.create(model, input)`) when the package is installed, else a built-in client sending the same request
+  (`ESAM_EMBED_CLIENT=auto|sdk|http`). `ESAM_EMBED_BASE_URL` is a base URL again (`…/v1` → `…/v1/embeddings`); a value
+  already ending in `/embeddings` is accepted. The SDK path is tested with a stand-in module only: the session that
+  wrote it had no `openai` package. Run `python -m esamkit.environment` against the real endpoint.
+- **System vs software requirements** (ontology v0.10, no SSS type): both are written in the SRS and a marker in
+  the id says which: `SYS-SRS-<code>-0NN` system, `SW-SRS-<code>-0NN` software, unmarked `SRS-<code>-0NN` software
+  (`requirement_classification.id_marker` / `unmarked`). Ids may therefore have four parts: the shared id form is
+  `traceability.ID_FORM` (also `docmodel.DOC_ID`). Every Requirement has `level` and `level_source` (`id`). A
+  `Level:` line or wording (subject of the shall) that disagrees with the id is a review issue naming the id it
+  should have. `TRACES_TO` links a requirement to a parent requirement on its `Traces to:` line. Code:
+  `traceability.classify`, `level_of_id`, `id_parts`. Tests: `tests/test_requirement_levels.py`. Shipped SRS
+  documents are unchanged (all unmarked, all software). The changed SQL in `graphstores/postgres_cte.py` has NOT
+  been run against PostgreSQL; reload the graph to give existing requirements a level.
+- **Example documents show both kinds**: `SRS-BRK-001.md` (+4 system requirements) and `SRS-DCL-001.md` (+2), with
+  `Traces to:` lines on 10 software requirements. The corpus now has 22 requirements (6 system, 16 software); the
+  graph is 42 vertices / 76 edges. Counts were updated in the DB-backed tests (`test_traceability`, `test_health`,
+  `test_confidence`) WITHOUT running them, and the documents must be re-ingested (`python lessons/03_vector_store/ingest.py`,
+  then `python -m crew.main graph reload`). Lessons 05/06 retrieval and confidence results were not re-run with the
+  longer documents. `tests/fixtures/word/SRS-BRK-001.doc` was regenerated from the new markdown.
+- **Example software ids renamed**: `SRS-BRK-0NN` / `SRS-DCL-0NN` are now `SW-SRS-BRK-0NN` / `SW-SRS-DCL-0NN` in the
+  two SRS documents, the staged STD (`Verifies:` lines), the manual (md + html), `docs/how_esam_finds_answers.html`,
+  `docs/build_manual_html.py`, lessons 05-08 and the tests; the three Word fixtures were regenerated. Unmarked ids
+  are still read as software (the authoring pipeline and `tests/fixtures/SRS-ENG-001_reference.md` still produce
+  `SRS-ENG-0NN`). Not re-run: the DB-backed tests, lessons 05/06, and the manual's HTML build.
+- **Unmarked ids are system first; Pipeline B follows the convention** (ontology v0.11, `unmarked: system`): an
+  `SRS-<code>-0NN` id is read as a system requirement (was software); requirements in an old graph with no `level`
+  are read from the id the same way (SQL, Cockpit, health, `verified_by`). `check_srs` now reports rule
+  `requirement level` (id vs `Level:` = error, id vs wording = warning, unmarked = warning) and `flow-down`,
+  accepts a trace to a requirement of the same draft, and returns `level` per requirement and `levels`; the CSV has a
+  `level` column. Tasks `b2_draft_srs` / `b3_verify_srs` tell the agents the two id forms. The reference draft is
+  `SW-SRS-ENG-0NN` plus one `SYS-SRS-ENG-040`. NOT run: a real `author` run (no CrewAI or model here), so whether
+  the model follows the new id instructions is unverified; the SQL is unverified as before.
+- **Baseline from diagrams** (ontology v0.12): `esamkit/diagram_baseline.py`, modes off | propose | apply via
+  `ESAM_DIAGRAM_BASELINE`, `documents.diagram_baseline`, `review --diagram-baseline`, `approve --[no-]apply-baseline`.
+  New ontology attributes `status` / `derived_from` on System and Subsystem; a candidate's missing required attribute
+  is a warning; the loader accepts a System without `wbs_code`; health check 3 lists candidates. `intake.receive`
+  returns `baseline_proposal`; `ingest(baseline_proposal=…)` applies it; `undo` reverts it when untouched. Tests:
+  `tests/test_diagram_baseline.py` (fake vision endpoint returning JSON). NOT verified: a real vision model's
+  reading of a real diagram (quality of the extraction is the model's), the crew wiring (`crew/main.py`,
+  `IngestDocumentTool`) which needs CrewAI, and the Cockpit, which shows candidates only through the health panel
+  and a node's properties.
+- **Complex Word files**: `word_doc.py` now follows the drawing layer of a `.doc` (OfficeArt: the picture store,
+  the shape tree, anchors in PlcSpaMom, text boxes in PlcftxbxTxt), so floating pictures and drawn shapes stand
+  where they are anchored; EMF/WMF/DIB pictures are taken out; header/footer pictures are left out with a note;
+  scanning for PNG/JPEG remains as the fallback. Both Word readers merge the shapes drawn in one paragraph into one
+  drawing read in reading order (`docmodel.reading_order`, `merge_drawings`) and mark a picture's table cell
+  (`Picture.cell`, "(Picture N, below)"). Tests: `tests/test_word_complex.py`. NOT tried: a `.doc` written by
+  Microsoft Word itself, an embedded OLE object (Visio, chart), PICT pictures, Word-written grouped shapes.
+- **Sample Word documents in the corpus**: `data/documents/originals/SSDD-SUSP-001.doc` and `SSDD-PWR-001.doc`
+  (+ their `.md`, baseline lines attached to `SYS-SUSP` / `SYS-PWR`; generator `tests/fixtures/word/make_samples.py`).
+  The baseline is now 22 vertices / 24 edges (7 documents), the graph with traceability 44 / 78, and the corpus
+  chunks to 46 pieces (8+6+6+7+6 and 7+6 for the two SSDDs, counted with `chunk_markdown`, not ingested). Counts
+  were updated in the DB-backed tests (`test_graph_store`, `test_cockpit`, `test_confidence`) WITHOUT running them.
+  To bring a database in step: `python -m crew.main ingest reload --with-graph`.
+  Still quoting older counts: the "28 chunks / 20-vertex graph" lines below and in `HOW_TO_START.md` (they describe
+  the database as it was left), lesson 03's sample output and the manual's §2.2 row table. Lessons 05/06 answers
+  were not re-run with the two extra documents in the search index.
+- **Search-store utility**: `python -m crew.main ingest status | reload [--only ID …] [--fresh] [--with-graph] |
+  reset --yes` (`crew/ingest_admin.py`, `tests/test_ingest_admin.py` with an in-memory store and embedder). New
+  store helpers `sources()`, `collection_model()`, `drop_collection()` in `vectorstores/pgvector_store.py`. NOT run
+  against PostgreSQL or a real embedding model.
+- **Graph utility**: `python -m crew.main graph status | reload | reset --yes` (`crew/graph_admin.py`,
+  `tests/test_graph_admin.py` with an in-memory graph). Not yet run against PostgreSQL.
+- **NOT verified in the session that wrote it** (no CrewAI, no database, no model endpoint there):
+  1. `tests/test_crew_llm.py` and a real crew run with fallbacks: run `pytest -q tests/test_crew_llm.py`
+     and `python -m crew.main env` in the crew venv first.
+  2. The DB-backed tests (`test_intake.py` bench, pgvector, graph) against the changed ingest/intake.
+  3. A `.doc` written by Microsoft Word itself. Fixtures are LibreOffice-written plus hand-built byte cases
+     (8-bit pieces, out-of-order pieces). Try a few real ones: `python -m esamkit.readers file.doc`.
+  4. A real vision model describing a real diagram.
 
 ### Session 2026-10-19 (afternoon): HTML edition of the SE User Manual
 

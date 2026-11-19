@@ -16,6 +16,8 @@ from typing import Any
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field, PrivateAttr
 
+from esamkit.ontology import part_sets
+from esamkit.traceability import level_of_id
 from esamkit.usage import UsageLedger
 
 
@@ -208,23 +210,36 @@ class CheckCoverageTool(WorkbenchTool):
         if not sub or sub["label"] != "Subsystem":
             return f"{subsystem_id} is not a subsystem in the graph."
         linked = any(subsystem_id in (e["from_eid"], e["to_eid"]) for e in snap["edges"] if e["type"] == "INTERFACES_WITH")
-        have = {V[e["to_eid"]]["props"].get("artifact_type"): e["to_eid"] for e in snap["edges"]
-                if e["type"] == "HAS_ARTIFACT" and e["from_eid"] == subsystem_id}
+        have: dict[str, list] = {}                # one subsystem may have several documents of a type (parts, or simply two)
+        for e in snap["edges"]:
+            if e["type"] == "HAS_ARTIFACT" and e["from_eid"] == subsystem_id:
+                p = V[e["to_eid"]]["props"]
+                have.setdefault(p.get("artifact_type"), []).append(
+                    f"{e['to_eid']} (part {p['part']})" if p.get("part") else e["to_eid"])
+        incomplete = {ps["type"]: ps["missing"] for ps in part_sets(
+            [{"id": e["to_eid"], "type": V[e["to_eid"]]["props"].get("artifact_type"), "attached_to": subsystem_id,
+              "part": V[e["to_eid"]]["props"].get("part")}
+             for e in snap["edges"] if e["type"] == "HAS_ARTIFACT" and e["from_eid"] == subsystem_id]) if ps["missing"]}
         req = wb.onto.required_documents(sub["props"], linked)
         return _dump({"subsystem": subsystem_id, "name": sub["props"].get("name"),
                       "safety_critical": sub["props"].get("safety_critical"),
-                      "required": {t: {"present": have.get(t) or "MISSING", "why": why} for t, why in req.items()},
+                      "required": {t: {"present": (sorted(have[t])[0] if len(have[t]) == 1 else sorted(have[t]))
+                                              if have.get(t) else "MISSING",
+                                              **({"parts_missing": incomplete[t]} if t in incomplete else {}),
+                                              "why": why} for t, why in req.items()},
                       "untested_requirements": [r["eid"] for r in wb.graph.untested_requirements()
                                                 if r["subsystem"] == subsystem_id]})
 
 
 class RequirementInput(BaseModel):
-    requirement_id: str = Field(..., description="Requirement id, e.g. SRS-BRK-011")
+    requirement_id: str = Field(..., description="Requirement id: SYS-SRS-BRK-040 (system), SW-SRS-BRK-011 (software); an unmarked SRS-BRK-011 is read as system")
 
 
 class VerifiedByTool(WorkbenchTool):
     name: str = "verified_by"
-    description: str = "The requirement's text and the test cases that verify it (none = untested)."
+    description: str = ("The requirement's text, its level (system or software), the test cases that verify it "
+                        "(none = untested), and its trace: the system requirements it derives from, or the "
+                        "software requirements that derive from it.")
     args_schema: type[BaseModel] = RequirementInput
 
     def _call(self, requirement_id: str, **_) -> str:
@@ -232,8 +247,14 @@ class VerifiedByTool(WorkbenchTool):
         req = next((v for v in g.snapshot()["vertices"] if v["eid"] == requirement_id and v["label"] == "Requirement"), None)
         if not req:
             return f"{requirement_id} is not a requirement in the graph."
-        return _dump({"requirement": requirement_id, "text": req["props"].get("text"),
-                      "document": req["props"].get("source_artifact"), "verified_by": g.verified_by(requirement_id)})
+        edges = [e for e in g.snapshot()["edges"] if e["type"] == "TRACES_TO"]
+        return _dump({"requirement": requirement_id, "level": req["props"].get("level") or level_of_id(requirement_id) or "system",
+                      "level_decided_by": req["props"].get("level_source"),
+                      "text": req["props"].get("text"), "allocated_to": req["props"].get("subsystem"),
+                      "document": req["props"].get("source_artifact"), "verified_by": g.verified_by(requirement_id),
+                      # software -> system: the higher-level requirements it is derived from, and what derives from it
+                      "traces_to": sorted(e["to_eid"] for e in edges if e["from_eid"] == requirement_id),
+                      "traced_by": sorted(e["from_eid"] for e in edges if e["to_eid"] == requirement_id)})
 
 
 def health_summary(rep: dict) -> dict:
@@ -275,7 +296,12 @@ class ReviewDocumentTool(WorkbenchTool):
     name: str = "review_document"
     description: str = ("Read the incoming document deterministically: its sections and chunk count; for a test "
                         "description every test case with its method, pass criteria and the TEXT of each "
-                        "requirement it verifies; for an SRS every requirement. Lists the issues found. Takes no input.")
+                        "requirement it verifies; for an SRS every requirement. Lists the issues found. If the "
+                        "document arrived as a Word file or a picture, also how it was converted to markdown, "
+                        "every picture with its description, and what the SE must check against the original; and, "
+                        "when its diagrams were analysed for the vehicle baseline, the systems and subsystems they "
+                        "show that the baseline lacks (baseline_from_diagrams). "
+                        "Takes no input.")
 
     def _call(self, **_) -> str:
         from esamkit.intake import review_document
@@ -283,7 +309,21 @@ class ReviewDocumentTool(WorkbenchTool):
         res = review_document(wb.document_text(), wb.state["entry"], wb.graph, wb.s)
         wb.state["review"] = res
         wb.save()
-        return _dump(res)
+        extra = {}
+        db = wb.state.get("diagram_baseline")
+        if db:                                # the diagrams were analysed for systems and subsystems
+            prop = db.get("proposal") or {}
+            extra["baseline_from_diagrams"] = {
+                "mode": db["mode"], "added_on_approval": bool(db.get("apply")), "summary": db.get("summary") or [],
+                "additions": [{k: a.get(k) for k in ("class", "id", "name", "parent", "from", "needs", "evidence")}
+                              for a in prop.get("additions") or []],
+                "already_present": prop.get("already_present") or [], "not_added": prop.get("not_added") or []}
+        if wb.state.get("conversion"):       # a Word or picture source: what the SE must check by eye
+            from esamkit.intake import conversion_attention
+            return _dump({**res, **extra, "converted_from": wb.state["conversion"]["from"],
+                          "conversion": wb.state["conversion"],
+                          "conversion_attention": conversion_attention(wb.state["conversion"])})
+        return _dump({**res, **extra})
 
 
 class IngestDocumentTool(WorkbenchTool):
@@ -306,8 +346,19 @@ class IngestDocumentTool(WorkbenchTool):
             return "REFUSED: the ontology check now fails:\n" + _dump(oc["findings"])
         wb.state["health_before"] = report_for(wb.graph, wb.s)
         wb.state["review"] = review_document(wb.document_text(), wb.state["entry"], wb.graph, wb.s)
+        original = wb.folder / wb.state["original"] if wb.state.get("original") else None
+        proposal = None
+        db = wb.state.get("diagram_baseline") or {}
+        if db.get("apply") and original is not None:
+            # Made again against the baseline as it is NOW (it may have moved on since the review); the model's
+            # answer for an unchanged baseline comes from the cache.
+            from esamkit.diagram_baseline import for_document
+            from esamkit.readers import convert
+            proposal = for_document(convert(original, wb.s, diagrams=False).pictures, wb.s, wb.state["entry"]["id"], wb.onto)
+            approved = set((wb.state.get("approval") or {}).get("baseline_additions_approved") or [])
+            proposal["additions"] = [a for a in proposal["additions"] if a["id"] in approved]   # only what the SE saw
         manifest = ingest(wb.folder / wb.state["document"], wb.state["entry"], wb.emb, wb.store, wb.graph,
-                          wb.folder / "replaced", wb.s)
+                          wb.folder / "replaced", wb.s, original=original, baseline_proposal=proposal)
         (wb.folder / "manifest.json").write_text(_dump(manifest))
         wb.state["state"] = "ingested"
         wb.save()

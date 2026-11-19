@@ -71,7 +71,8 @@ class GraphStore(ABC):
 
     @abstractmethod
     def untested_requirements(self) -> list[dict]:
-        """Requirements no test case VERIFIES, with their subsystem and document."""
+        """Requirements no test case VERIFIES, with their level (system |
+        software), what they are allocated to (`subsystem`) and their document."""
 
     @abstractmethod
     def verified_by(self, requirement_id: str) -> list[dict]:
@@ -79,5 +80,7 @@ class GraphStore(ABC):
 
     @abstractmethod
     def trace_summary(self) -> list[dict]:
-        """Per subsystem: how many requirements are allocated to it, and how many
-        have at least one test case verifying them."""
+        """Per subsystem: how many requirements are allocated to it and how
+        many have a test case verifying them, in total and split by level
+        (system_requirements / system_verified, software_requirements /
+        software_verified)."""

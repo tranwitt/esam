@@ -12,7 +12,8 @@ from pathlib import Path
 import yaml
 from crewai import LLM, Agent, Crew, Process, Task
 
-from esamkit.environment import load_profile, resolve
+from esamkit.config import settings as default_settings
+from esamkit.environment import load_profile, resolve, role_routes
 from esamkit.usage import UsageLedger
 
 from .custom_tools import TOOLS, InspectEnvironmentTool, Workbench
@@ -24,14 +25,38 @@ def _yaml(name: str) -> dict:
     return yaml.safe_load((CONFIG / name).read_text())
 
 
-def reasoning_llm(profile: dict) -> LLM:
-    """The profile's reasoning model, over any OpenAI-compatible endpoint
-    (OpenAI on the laptop, the IL5 API Gateway on the pilot)."""
-    import os
+def role_llm(profile: dict, role: str):
+    """A CrewAI model for one of the profile's roles, over any
+    OpenAI-compatible endpoint: the Chat Completions API or the Responses API
+    (`api:`), and, when the role has fallbacks, the next endpoint when a call
+    fails (crew/llm.py). Each role has its own endpoint: `reasoning` and
+    `coding` share nothing. None when the role is not configured."""
+    from .llm import build_llm
 
-    role = resolve(profile)["roles"]["reasoning"]
-    return LLM(model=f"openai/{role['model']}", base_url=role["base_url"],
-               api_key=os.getenv(role["api_key_env"] or "", ""))
+    routes = role_routes(profile, role)
+    if not routes:
+        return None
+    cooldown = (profile.get("llm") or {}).get("failover_cooldown_s", default_settings.llm_failover_cooldown)
+    return build_llm(routes, float(cooldown))
+
+
+def reasoning_llm(profile: dict):
+    """The profile's reasoning model (OpenAI on the laptop, the IL5 API
+    Gateway on the pilot): what every agent of this crew thinks with."""
+    from esamkit.config import env
+
+    llm = role_llm(profile, "reasoning")
+    if llm is None:                      # not configured: step 0 reports it; keep the object the same as before
+        role = resolve(profile)["roles"]["reasoning"]
+        return LLM(model=f"openai/{role['model']}", base_url=role["base_url"], api_key=env(role["api_key_env"]))
+    return llm
+
+
+def coding_llm(profile: dict):
+    """The profile's coding model (the one approved for writing code), on its
+    own endpoint, or None when the profile has none. No agent of this crew
+    writes code yet; a crew that does gives its agent this model."""
+    return role_llm(profile, "coding")
 
 
 class EsamCrew:
