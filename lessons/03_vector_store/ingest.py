@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from esamkit.baseline import load_baseline  # noqa: E402
 from esamkit.ingest import ingest_file  # noqa: E402
+from esamkit.readers import document_files  # noqa: E402
 from esamkit.config import settings  # noqa: E402
 from esamkit.factory import get_embedder, get_vector_store  # noqa: E402
 
@@ -47,7 +48,9 @@ def main() -> None:
     # file names; here the baseline states it (`file:` on each artifact), so
     # the link is exact and an unlisted document is reported, not stored unlinked.
     index = load_baseline(settings.baseline_yaml).artifact_index()
-    files = sorted(settings.documents_dir.glob("*.md"))
+    # Markdown, Word (.docx, .doc) and picture files alike: esamkit/readers.py
+    # turns each into markdown before it is chunked.
+    files = document_files(settings.documents_dir)
     print(f"Documents: {len(files)} in {settings.documents_dir}\n")
 
     total = 0

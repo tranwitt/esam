@@ -8,6 +8,11 @@
 #
 # Secrets: give the NAME of an environment variable (or of a line in esam/.env),
 # never the value. Probes report only "set" / "missing".
+#
+# Every `<key>_env` names a variable in esam/.env (or the environment). When
+# that variable is set it is used; otherwise the value written under `<key>`.
+# So .env is the one place to change a URL, a model or a key, and the
+# variable names here are exactly the ones in .env.example.
 # ─────────────────────────────────────────────────────────────────────────────
 name: local
 description: "Learning laptop: Docker PostgreSQL 16 + pgvector, BGE on CPU, OpenAI gpt-5.1 over the internet"
@@ -15,18 +20,64 @@ network:
   internet: true                       # false = air-gapped: probes never try public hosts
 
 llm:
+  # One endpoint per role. Reasoning and coding are SEPARATE: each has its own
+  # URL, key, model, API and fallbacks, and neither borrows from the other.
   roles:
-    reasoning:                         # triage, research, review (all three crew agents)
+    reasoning:                         # triage, research, review (all three crew agents); lessons 05/06
       model: gpt-5.1
+      model_env: ESAM_REASONING_MODEL
       base_url: https://api.openai.com/v1
-      api_key_env: ESAM_CHAT_API_KEY
-    code: null                         # no code-generation model here; pilot uses Nemotron
+      base_url_env: ESAM_REASONING_BASE_URL
+      api_key_env: ESAM_REASONING_API_KEY
+      # Which API the endpoint speaks:
+      #   chat       POST <base_url>/chat/completions   (default)
+      #   responses  POST <base_url>/responses          (OpenAI's Responses API)
+      #   auto       chat first; responses on the same endpoint if chat fails
+      api: chat
+      api_env: ESAM_REASONING_API
+      # Endpoints tried in order when a call fails (unreachable, 404/405, 429,
+      # 5xx, rejected key, "API or model not supported here"). Set them in .env:
+      #   ESAM_REASONING_FALLBACK_1_API=responses          (same endpoint, the Responses API)
+      #   ESAM_REASONING_FALLBACK_2_BASE_URL=https://...   (another endpoint; _API_KEY, _MODEL, _API optional)
+      # Each states only what differs from the primary. None set = no fallbacks.
+      fallbacks_env: ESAM_REASONING_FALLBACK
+    coding:                            # the model that writes code. Off until ESAM_CODING_MODEL is set.
+      model_env: ESAM_CODING_MODEL
+      base_url_env: ESAM_CODING_BASE_URL
+      api_key_env: ESAM_CODING_API_KEY
+      api: chat
+      api_env: ESAM_CODING_API
+      fallbacks_env: ESAM_CODING_FALLBACK
+    vision:                            # reads the diagrams in ingested documents (esamkit/diagrams.py).
+      model_env: ESAM_VISION_MODEL     # Off until ESAM_VISION_MODEL is set: then no picture is ever sent to a model.
+      base_url_env: ESAM_VISION_BASE_URL   # URL, key, API and fallbacks left unset come from reasoning's
+      api_key_env: ESAM_VISION_API_KEY
+      api_env: ESAM_VISION_API
+      fallbacks_env: ESAM_VISION_FALLBACK
   pricing: null                        # {model: {input_per_1k: x, output_per_1k: y}}; fill with your own rates
+  # failover_cooldown_s: 300           # how long a failed endpoint is skipped (default: ESAM_LLM_FAILOVER_COOLDOWN)
 
+# The embedding model: WHICH model, and WHERE it runs.
+#   model      the model. Local backend: its Hugging Face id. Endpoint: the name the endpoint serves.
+#   base_url   the URL of an OpenAI-compatible embeddings endpoint (https://<host>/v1). None = run locally.
+# On this profile both can be set without editing the file:
+#   ESAM_EMBED_MODEL=nomic-embed-text  ESAM_EMBED_BASE_URL=http://127.0.0.1:11434/v1
+# `python -m esamkit.environment` shows the model and URL in effect and checks them.
+# Changing the model means re-embedding everything (the store refuses to mix models).
 embeddings:
-  backend: local                       # local | openai | none
-  model_id: BAAI/bge-base-en-v1.5
-  model_dir: models/bge-base-en-v1.5
+  backend: auto                        # auto (endpoint if a URL is set, else local) | local | openai | none
+  model: BAAI/bge-base-en-v1.5
+  model_env: ESAM_EMBED_MODEL          # this variable, when set, overrides `model`
+  base_url_env: ESAM_EMBED_BASE_URL    # or write the URL here:  base_url: https://<host>/v1
+  api_key_env: ESAM_EMBED_API_KEY      # only if the endpoint wants a key
+  model_dir_env: ESAM_EMBED_MODEL_DIR  # local backend only; default is models/<last part of the model name>
+  # dimensions: 768                    # endpoint only: ask for shorter vectors (text-embedding-3-*)
+
+documents:
+  diagrams: auto                       # auto (vision model if one is set above, else local text) | local | off
+  diagrams_env: ESAM_DIAGRAMS
+  diagram_baseline: off                # off | propose | apply: read the systems and subsystems a picture
+  diagram_baseline_env: ESAM_DIAGRAM_BASELINE   # diagram shows into the vehicle baseline (as candidates for an SE)
 
 database:                              # PostgreSQL: vectors, graph tables, run log, usage
   backend: postgres                    # postgres | none
@@ -37,6 +88,7 @@ database:                              # PostgreSQL: vectors, graph tables, run 
 vector:
   backend: pgvector                    # pgvector | none
   collection: esam_documents
+  collection_env: ESAM_COLLECTION
 
 graph:
   backend: postgres                    # postgres (recursive CTEs) | janusgraph | none

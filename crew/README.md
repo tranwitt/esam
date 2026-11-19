@@ -1,6 +1,6 @@
 # ESAM crew (CrewAI)
 
-Runs ESAM work without a Claude session: an environment check, then pipelines of three agents
+Runs ESAM work without an interactive AI assistant session: an environment check, then pipelines of three agents
 (Triage → Researcher/Author → SE Reviewer) that use **only** tested `esamkit` functions as tools.
 Same 5-file structure as the RTOS crew (`aidev/crew/`): `main.py`, `crew.py`, `custom_tools.py`,
 `config/agents.yaml`, `config/tasks.yaml`.
@@ -12,7 +12,10 @@ python -m crew.main env                       # step 0 with the Environment Engi
 python -m esamkit.usage                       # tokens per model, calls per tool, last 7 days
 
 python -m crew.main review path/to/STD-BRK-001.md   # Pipeline A: A1 + A2, then STOP for the SE
-python -m crew.main inbox                           # the same for every .md in work/inbox/
+python -m crew.main review path/to/SRS-PWR-001.doc  # Word (.docx, .doc) works the same way
+python -m crew.main review topology.png --set id=ICD-BRK-003 --set name="Brake bus topology" \
+                           --set revision=A --set attached_to=SUB-BRK-ECU     # a picture diagram
+python -m crew.main inbox                           # the same for every document in work/inbox/
 python -m crew.main runs                            # runs and their state
 python -m crew.main approve <run>                   # the SE's decision: A3 ingest + A4 verify
 python -m crew.main reject <run> --note "why"
@@ -22,6 +25,14 @@ python -m crew.main ask "Which brake requirements have no test?"
 python -m esamkit.standards                         # the standards library
 python -m esamkit.standards show "MIL-STD-882E 4.4.2"
 python -m crew.main author data/briefs/SRS-ENG-001.yaml   # Pipeline B → work/drafts/
+
+python -m crew.main graph status                    # is the graph in step with the baseline?
+python -m crew.main graph reload                    # rebuild the graph from the baseline and its documents
+python -m crew.main graph reset --yes               # empty the graph
+
+python -m crew.main ingest status                   # is the search store in step with the baseline's documents?
+python -m crew.main ingest reload                   # read, chunk, embed and store every listed document again
+python -m crew.main ingest reload --with-graph      # ... and rebuild the graph afterwards
 
 python -m crew.main tasks add review work/inbox/STD-BRK-001.md     # queue work in PostgreSQL
 python -m crew.main tasks list
@@ -49,8 +60,8 @@ air-gapped; template), `full-janusgraph` (template).
 | database | connect, PostgreSQL + pgvector versions, latency; DSN shown masked | print the password |
 | vector | chunks per collection; the collection's embedding model matches the profile's | load the model |
 | graph | PostgreSQL CTE tables and counts; JanusGraph reachability (reported *not implemented in this build*) | |
-| embeddings | model staged on disk, size, dimension | load the model |
-| llm.\<role\> | key variable set; endpoint lists the model | spend tokens; contact a public host from an air-gapped profile |
+| embeddings | local: model staged on disk, size, dimension. Endpoint: one real embedding call, dimension | load the local model; contact a public host from an air-gapped profile |
+| llm.\<role\> | key variable set; endpoint lists the model; the same for each fallback (warns when only a fallback is usable) | spend tokens; contact a public host from an air-gapped profile |
 | crewai | installed version; telemetry and memory off | |
 
 **Capabilities**: each crew tool lists the services it needs (`TOOL_NEEDS` in `esamkit/environment.py`);
@@ -63,6 +74,92 @@ success) and run, in PostgreSQL `esam_usage` or `work/usage/usage.jsonl` when th
 shown only if a profile has `llm.pricing` with your own rates.
 
 Run folders: `work/runs/<timestamp>_<name>/` (gitignored).
+
+### Model endpoints: fallbacks and the Responses API
+
+A role in the profile has one primary endpoint and, optionally, fallbacks:
+
+```yaml
+llm:
+  roles:
+    reasoning:
+      model: gpt-5.1
+      model_env: ESAM_REASONING_MODEL          # when this variable is set in .env it replaces the line above
+      base_url_env: ESAM_REASONING_BASE_URL
+      api_key_env: ESAM_REASONING_API_KEY
+      api: chat                                # chat | responses | auto (chat, then responses on the same endpoint)
+      api_env: ESAM_REASONING_API
+      fallbacks_env: ESAM_REASONING_FALLBACK   # numbered variables in .env, see below
+    coding:                                    # its own endpoint: nothing is shared with reasoning
+      model: nemotron-4-15b
+      model_env: ESAM_CODING_MODEL
+      base_url_env: ESAM_CODING_BASE_URL
+      api_key_env: ESAM_CODING_API_KEY
+      api_env: ESAM_CODING_API
+      fallbacks_env: ESAM_CODING_FALLBACK
+```
+
+**The environment file and the profiles.** Any profile key may have a sibling `<key>_env` naming a variable;
+when that variable is set (in `esam/.env` or the environment) it is used, otherwise the value written in the
+profile. The shipped profiles name exactly the variables in `.env.example`, so `.env` is the one place to set
+URLs, models and keys, and `python -m crew.main env` shows what is in effect:
+
+| Role | Variables | Notes |
+|---|---|---|
+| `reasoning` (all the crew's agents, lessons 05/06) | `ESAM_REASONING_BASE_URL`, `_API_KEY`, `_MODEL`, `_API`, `ESAM_REASONING_FALLBACK_<n>_BASE_URL` / `_API_KEY` / `_MODEL` / `_API` | `ESAM_CHAT_*` is the older name and is still read |
+| `coding` (the model approved for writing code) | `ESAM_CODING_BASE_URL`, `_API_KEY`, `_MODEL`, `_API`, `ESAM_CODING_FALLBACK_<n>_…` | Separate from reasoning: no URL or key is shared. Off when it has no model. `crew.crew.coding_llm(profile)` returns its model; no agent of this crew writes code yet |
+| `vision` (describes picture diagrams) | `ESAM_VISION_MODEL`, `_BASE_URL`, `_API_KEY`, `_API`, `ESAM_VISION_FALLBACK_<n>_…` | Off until `ESAM_VISION_MODEL` is set. What it leaves unset comes from reasoning |
+
+A fallback states only what differs from the role's primary endpoint (`ESAM_REASONING_FALLBACK_1_API=responses`
+is the same endpoint over the Responses API). `ESAM_GATEWAY_URL` / `ESAM_GATEWAY_KEY`, which used to serve both
+roles, are still read for whichever of the two has no URL or key of its own. Also set from `.env`:
+`ESAM_COLLECTION`, `ESAM_DIAGRAMS`, `ESAM_EMBED_MODEL`, `ESAM_EMBED_BASE_URL`, `ESAM_EMBED_API_KEY`,
+`ESAM_EMBED_MODEL_DIR`, `ESAM_PG_DSN`, `ESAM_GREMLIN_URL`. A profile may still list `fallbacks:` itself.
+
+With one route the crew uses a plain CrewAI `LLM` (`api: responses` selects CrewAI's Responses API support).
+With several it uses `FailoverLLM` (`crew/llm.py`): a call that fails because the endpoint is unreachable, does
+not offer that API or model (404/405), is overloaded (408/429/5xx) or rejects the key is made again on the next
+route, and the failed route is skipped for `ESAM_LLM_FAILOVER_COOLDOWN` seconds (300). Errors that would repeat
+anywhere (context too long, content filter) are raised unchanged. Which routes served a run is printed at the
+end of it. A fallback whose URL or key variable is unset is left out and reported by `python -m crew.main env`.
+With no fallback variable set a role has one route and nothing changes.
+
+## The graph: status, reload, reset
+
+The graph is derived: its structure comes from the baseline, its requirements and test cases from the SRS and
+STD documents the baseline lists. `crew/graph_admin.py` rebuilds or empties it without an agent, a model or
+the lessons folder (it replaces `lessons/04_graph/load_graph.py --reset` for day-to-day use).
+
+| Command | Does |
+|---|---|
+| `graph status` | Counts by kind, and whether the graph holds exactly what the baseline and documents say; lists what is missing or extra. Exit code 1 when out of step |
+| `graph reload` | Reads and checks everything first (the baseline loads, passes the ontology check, documents are readable), then empties the graph and loads it. A baseline with errors is refused and the graph is left as it was; `--force` loads one that only fails the ontology check |
+| `graph reset --yes` | Empties the graph and leaves it empty until the next `reload` |
+
+Use `reload` after editing the baseline by hand, after a `git checkout`, after restoring a database, or when
+health check 5 says "reload the graph". None of the three touches the baseline, the documents or the search
+store. All take `--env <profile>`; `python -m crew.graph_admin …` is the same without the crew's other
+dependencies.
+
+## The search store: status, reload, reset
+
+The search store (the embedded chunks) is derived too: every chunk comes from a document the baseline lists.
+`crew/ingest_admin.py` re-ingests those documents or empties the store without an agent, a chat model or the
+lessons folder (it replaces `lessons/03_vector_store/ingest.py` for day-to-day use). The embedding model is called.
+
+| Command | Does |
+|---|---|
+| `ingest status` | Chunks stored per document against what a reload would store, chunks of documents the baseline no longer lists, and the embedding model the store was built with. Compares counts only, so reload after editing a document. Exit code 1 when out of step. No model is loaded |
+| `ingest reload` | Reads and chunks every listed document first and asks the embedding model for one vector; only then replaces the documents one at a time (old chunks out, new chunks in), and removes chunks of documents the baseline no longer lists. A listed document whose file is missing stops it before anything changes; `--force` skips that document |
+| `ingest reload --only ID …` | The same for the named documents; nothing else is touched |
+| `ingest reload --fresh` | Empties the store first. Needed after changing the embedding model or its dimension, which the store otherwise refuses (`ModelMismatchError`) |
+| `ingest reload --with-graph` | Runs `graph reload` afterwards: both derived stores rebuilt in one command |
+| `ingest reset --yes` | Empties the store and leaves it empty until the next `reload` |
+
+If the embedding endpoint fails part-way, the reload stops and says which documents were stored again and which
+are still as they were; each document is whole either way. Run it again. Documents in `data/documents/` that the
+baseline does not list are reported and not stored: bring those in through the intake pipeline (`review` /
+`approve`). `python -m crew.ingest_admin …` is the same without the crew's other dependencies.
 
 ## Step 1: Pipeline A (a document → verified ingestion)
 
@@ -78,9 +175,124 @@ disabled in this environment.
 | A3 ingest | Researcher | `ingest_document` | the tool refuses without a recorded approval, and re-runs the ontology check first |
 | A4 verify | SE Reviewer | `verify_ingestion`, `health_report` | the tool: chunks stored, attached in the graph, test cases + VERIFIES links, search finds it, integrity passes, health before vs after; VERIFIED / NOT VERIFIED |
 
+**Word documents and pictures.** `review` and `inbox` take `.md .txt .docx .doc .rtf` and picture files.
+The file is converted to markdown once, when it arrives (`esamkit/readers.py`); the agents review that
+markdown, the approval request says it was converted and by what, and lists every picture with how it was
+read (described by a model: compare with the picture; not described: its content is not searchable). On
+approval the markdown becomes `data/documents/<ID>.md` and the delivered file is kept as
+`data/documents/originals/<ID>.<ext>`; `undo` removes both. A picture states nothing about itself, so it
+needs `--set id=…` (and normally `name`, `revision`, `attached_to`). `documents.diagrams` in the profile
+(`auto | local | off`) decides whether pictures may go to the vision role's model; the pilot templates say
+`local`. Pictures are numbered in the order they stand in the document, including floating pictures, pictures
+in table cells and diagrams drawn with Word shapes (their text is read as "text in the drawing"); pictures in
+page headers and footers are left out. Two delivered `.doc` files of this kind are part of the sample corpus
+(`data/documents/originals/SSDD-SUSP-001.doc`, `SSDD-PWR-001.doc`, both already ingested as revision A);
+`python -m esamkit.readers <file>` prints what the pipeline reads from one.
+
 What the document must state (SE manual §2.5): a title line `# <ID> — <name>` and the table
 `| Document | Type | Revision | Subsystem |`. Missing fields are ontology findings; the SE can supply them
 with `--set revision=A --set attached_to=SUB-…`.
+
+**Populating the vehicle baseline from a diagram.** An architecture or block diagram shows which systems the vehicle
+has and which subsystems sit in each. As an option, a picture that is ingested (a picture file, or one inside a Word
+document) is also analysed for that, and what the baseline lacks is proposed or added:
+
+| Mode | What happens |
+|---|---|
+| `off` (default) | Pictures are only described, as before |
+| `propose` | The systems and subsystems the diagram shows that the baseline lacks are listed in the review (and in the run's `baseline_proposal.md`). Nothing is changed |
+| `apply` | As `propose`; when the SE approves the run they are written to the baseline as candidates. `undo` takes them out again |
+
+```bash
+python -m crew.main review architecture.png --set id=SSDD-LTV-002 --set name="Vehicle architecture" \
+       --set revision=A --set attached_to=V-001 --diagram-baseline propose
+python -m crew.main approve <run> --apply-baseline        # add what a propose run listed
+python -m crew.main approve <run> --no-apply-baseline     # ingest only, whatever the mode was
+python -m esamkit.diagram_baseline architecture.png       # the proposal for one file, outside a pipeline (--apply to write it)
+```
+
+Set it per run with `--diagram-baseline`, or as the default with `ESAM_DIAGRAM_BASELINE` in `.env`
+(`documents.diagram_baseline` in a profile). What to expect:
+
+- **It uses the vision model**, with one more call per picture than a description, and only under the same
+  conditions: `ESAM_VISION_MODEL` set and `ESAM_DIAGRAMS=auto`. Otherwise nothing is sent and the review says the
+  picture was not analysed.
+- **Existing entries are never changed.** The model is given the baseline's systems and subsystems; a name the
+  picture shows that matches one by id, name or alias is left alone. A subsystem the picture puts under a
+  different system than the baseline is reported, not moved.
+- **Additions are candidates.** Each gets an id in the ontology's form (`SYS-…`, `SUB-…`), `status: candidate` and
+  `derived_from: "<document> picture <n> (<file>)"`. The health report lists them under *Awaiting SE review* until
+  an SE checks them and deletes the `status` line.
+- **ESAM does not invent what the picture does not say.** A new system gets a WBS code only if the picture prints
+  one (a candidate without it is a warning, for the SE to fill in). A new subsystem is written
+  `safety_critical: true` unless the picture says otherwise, so an unreviewed unit is held to the stricter rules
+  until an SE decides. A subsystem the picture does not place in a system is listed, not added.
+- **The file stays yours.** Entries are inserted as text where they belong; no existing line moves. If the result
+  would not load or would fail the ontology check, the baseline is left exactly as it was and the document is
+  still ingested.
+- The document itself must be attached to something already in the baseline: it cannot be attached to a
+  subsystem its own diagram proposes.
+
+**Several documents of one type; documents in parts.** A subsystem (or the vehicle, for an SSDD) may have more
+than one document of a type. Each is its own baseline entry with its own id (`SSDD-LTV-001`, `SSDD-LTV-002`, …;
+ids run 001–009 per type and owner code) and is reviewed, approved, ingested and undone on its own: a document
+replaces another only when it has the **same id** at a later revision. When they are parts of one document,
+each says which part it is with a `Part` column in its header table (`2 of 3`), or `--set part="2 of 3"`:
+
+```
+| Document | Type | Revision | System | Part |
+|---|---|---|---|---|
+| SSDD-LTV-002 | SSDD | A | V-001 | 2 of 3 |
+```
+
+The ontology check then knows the set: a missing part is a warning (parts can arrive in any order, and the
+approval request says which are still missing), two documents claiming the same part is an error. Requirements
+split over several SRS parts all land on the subsystem. The required-documents rules are met by any document of
+the type; an incomplete set shows as a warning in health check 5 and beside the document in the Cockpit.
+Documents without `part` (two ICDs for one ECU) are simply two documents.
+
+**System requirements and software requirements.** Both are written in the SRS, and a marker in front of `SRS-` in the
+**id** says which a requirement is:
+
+| Id | It is | Meaning |
+|---|---|---|
+| `SYS-SRS-BRK-050` | a **system** requirement | what the subsystem as a whole must do, whatever mix of hardware and software does it |
+| `SW-SRS-BRK-060` | a **software** requirement | what the software itself must do |
+| `SRS-BRK-011` | a **system** requirement, first | no marker: accepted and read as a system requirement. If its wording reads as software ("the software shall"), the review says so and gives the id it should have (`SW-SRS-BRK-011`) |
+
+```
+- **SYS-SRS-BRK-050** The Brake Control ECU shall prevent sustained lock-up of any braked wheel above 8 km/h.
+  Safety: SwCI 1 | Verification: T, A
+
+- **SW-SRS-BRK-060** The software shall command pressure release within 20 ms of detecting incipient lock-up.
+  Timing: 20 ms max | Verification: T | Traces to: SYS-SRS-BRK-050
+```
+
+The two example specifications show both kinds: `data/documents/SRS-BRK-001.md` and `SRS-DCL-001.md` each end with
+a *System requirements* section (`SYS-SRS-BRK-040` … `043`, `SYS-SRS-DCL-040`, `041`); their software requirements
+are `SW-SRS-BRK-010` … `032` and `SW-SRS-DCL-010` … `031`, and trace to them. `SYS-SRS-BRK-043` is deliberately traced to by nothing, so the flow-down gap shows.
+
+Each requirement in the graph carries `level` (and `level_source: id`). `Traces to:` from a software requirement
+to a system requirement becomes a `TRACES_TO` link. The review of an SRS lists the two levels apart with counts,
+shows each parent's text, and says which system requirements no software requirement traces to. The health
+report, `verified_by`, `graph reload` and the Cockpit's requirement coverage show the two apart as well. Test
+cases cite either kind on their `Verifies:` line.
+
+So that a requirement numbered as the wrong kind is noticed, the review cross-checks every id against the
+requirement itself and gives the id it should have: an optional `Level: system` / `Level: software` on its
+attribute line, and the subject of its "shall" ("… the software shall" reads as software, "The Brake Control ECU
+shall" as system; a software word wins). An id that is not an `SRS-` id is reported and classified by that same
+check. The markers and the word lists are in the ontology (`requirement_classification` in
+`data/ontology/esam_ontology.yaml`).
+
+**System-level documents (SSDD).** Every document type is attached to a subsystem except the SSDD, which the
+ontology lets sit on the vehicle system, one system or a subsystem (`document_types.ssdd.attaches_to:
+[Vehicle, System, Subsystem]` in `data/ontology/esam_ontology.yaml`). The last header column then holds
+`V-001` or `SYS-…` and may be headed System, Vehicle or Attached to. A sample to try:
+`python -m crew.main review lessons/06_missing_document/staged/SSDD-LTV-001.md`. Its chunks carry the
+owner's own WBS code (`1.0` for the vehicle) and the graph gets `V-001 ─HAS_ARTIFACT→ SSDD-LTV-001`.
+To let another type sit higher up, add `attaches_to` to that type; the class must also be in
+`relationships.HAS_ARTIFACT.from`.
 
 **What "ingest" changes**: copies the file into `data/documents/`, appends one line to the baseline's
 `artifacts:` (as text, so the YAML's comments survive), stores the chunks, and reloads the graph with its
@@ -92,7 +304,7 @@ with `git diff` and commit them, or `undo`.
 Ontology errors can't be approved past: the document is fixed and reviewed again.
 
 Run folder of an intake: `state.json` (state, entry, ontology result, review, approval, health before/after,
-verification), `incoming/<doc>`, one `.md` per task, `approval_request.md`, `manifest.json`,
+verification), `incoming/<ID>.md` (and `incoming/original/<file>` when it was converted), one `.md` per task, `approval_request.md`, `manifest.json`,
 `verification_report.md`. Inbox originals move to `work/inbox/done/`.
 
 **Interactive** (`ask`): Triage pins down the entities and the documents that would answer (present or
@@ -116,6 +328,23 @@ is not held.
 **Pipeline B** (`python -m crew.main author <brief.yaml>`): the SE's brief names the document, its sources and the
 safety assessment (severity and control category per safety-significant function). ESAM computes the SwCI and never
 assesses safety itself.
+
+The draft uses the same id convention as every SRS: `SYS-SRS-<code>-0NN` for what the unit as a whole must do,
+`SW-SRS-<code>-0NN` for what the software must do, and a software requirement lists the system requirement it
+implements in its `Traces to`. The lint (`check_srs`) holds the draft to it:
+
+| Finding | Level |
+|---|---|
+| An id that is not this document's, or not in either form | error |
+| `Level:` on the attribute line disagrees with the id (or is neither `system` nor `software`) | error |
+| The wording disagrees with the id ("the software shall" under a `SYS-` id), with the id it should have | warning |
+| An id with no marker: accepted, read as a system requirement, and asked to take its marker | warning |
+| A system requirement no software requirement of the draft traces to | warning |
+| A system requirement that traces to a software requirement | error |
+
+The drafting agent is told to write a system requirement only where a source or the brief states one, and the
+verifier checks each requirement's kind. `traceability_matrix.csv` has a `level` column and the evidence index
+counts the two kinds. `tests/fixtures/SRS-ENG-001_reference.md` is a draft in this form that passes.
 
 | Step | Agent | Tools | Decides |
 |---|---|---|---|

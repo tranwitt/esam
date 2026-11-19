@@ -27,12 +27,14 @@ def test_settings_follow_the_profile(monkeypatch):
 
 
 def test_pilot_without_settings_reports_what_to_set(monkeypatch):
-    for v in ("ESAM_PG_DSN", "ESAM_GATEWAY_URL", "ESAM_GATEWAY_KEY"):
+    for v in ("ESAM_PG_DSN", "ESAM_GATEWAY_URL", "ESAM_GATEWAY_KEY", "ESAM_REASONING_BASE_URL", "ESAM_CHAT_BASE_URL",
+              "ESAM_CODING_BASE_URL"):
         monkeypatch.delenv(v, raising=False)
     rep = env.inspect("pilot-il5", network=False)
     p = {x["name"]: x for x in rep["probes"]}
     assert p["database"]["status"] == "not_configured" and "ESAM_PG_DSN" in p["database"]["detail"]
-    assert p["llm.reasoning"]["status"] == "not_configured" and "ESAM_GATEWAY_URL" in p["llm.reasoning"]["detail"]
+    assert p["llm.reasoning"]["status"] == "not_configured" and "ESAM_REASONING_BASE_URL" in p["llm.reasoning"]["detail"]
+    assert p["llm.coding"]["status"] == "not_configured" and "ESAM_CODING_BASE_URL" in p["llm.coding"]["detail"]
     assert not rep["capabilities"]["agents_can_run"]
     assert rep["capabilities"]["tools"]["walk_graph"]["blocked_by"] == ["graph"]
 

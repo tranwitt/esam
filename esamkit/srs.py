@@ -10,7 +10,9 @@ against the standards it claims to follow, and packaged as evidence.
   check_brief The SwCI of each SSF from Table V, its level-of-rigor tasks, and
               where the brief disagrees with the baseline.
   check_srs   The draft against DI-IPSC-81433A (outline), the ontology and SE
-              manual §9.4 (requirement form and attributes), the brief (every
+              manual §9.4 (requirement form and attributes; each id marked
+              SYS-SRS-… system or SW-SRS-… software, and agreeing with its
+              wording; an unmarked id is read as system), the brief (every
               SSF implemented, SwCI as assessed), the sources (every section
               accounted for), the graph (every interface addressed) and the
               standards library (every Basis citation real). Findings name the
@@ -30,10 +32,12 @@ from pathlib import Path
 
 import yaml
 
+from .traceability import classification_rules, id_for, id_parts, shall_subject
 from .config import PROJECT_ROOT, Settings, settings as default_settings
 from .graphstores.base import GraphStore
 from .intake import ontology_check, read_header
 from .ontology import Ontology
+from .readers import read_document
 from .standards import Library
 from .traceability import read_requirements
 
@@ -77,12 +81,12 @@ def source_text(brief: dict, doc_id: str, s: Settings = default_settings) -> tup
     base = yaml.safe_load(s.baseline_yaml.read_text())
     art = next((a for a in base.get("artifacts") or [] if a["id"] == doc_id), None)
     if art and (s.documents_dir / art["file"]).exists():
-        return (s.documents_dir / art["file"]).read_text(), f"baseline ({art['file']})"
+        return read_document(s.documents_dir / art["file"], s), f"baseline ({art['file']})"
     src = next((x for x in brief.get("sources") or [] if x.get("id") == doc_id), None)
     if src and src.get("file"):
         f = Path(src["file"]) if Path(src["file"]).is_absolute() else PROJECT_ROOT / src["file"]
         if f.exists():
-            return f.read_text(), f"brief file {src['file']} (NOT in the baseline yet)"
+            return read_document(f, s), f"brief file {src['file']} (NOT in the baseline yet)"
     return None
 
 
@@ -140,8 +144,9 @@ def check_brief(brief: dict, lib: Library, onto: Ontology, s: Settings = default
 
 
 def _baseline_subsystem(s: Settings, sid: str | None) -> dict | None:
-    from .intake import _subsystem
-    return _subsystem(yaml.safe_load(s.baseline_yaml.read_text()), sid)
+    from .ontology import find_node
+    found = find_node(yaml.safe_load(s.baseline_yaml.read_text()), sid)
+    return found[1] if found and found[0] == "Subsystem" else None
 
 
 # ── The draft ───────────────────────────────────────────────────────────────
@@ -186,13 +191,16 @@ def check_srs(text: str, brief: dict, assessment: dict, graph: GraphStore, lib: 
                         "DI-IPSC-81433A 3"))
 
     # Requirements: form and attributes.
-    prefix = doc["id"].rsplit("-", 1)[0] + "-"
+    prefix = doc["id"].rsplit("-", 1)[0] + "-"                      # "SRS-ENG-": what every requirement id of this document carries
+    rules = classification_rules()
+    sys_form, sw_form = (f"{rules['id_marker'].get(lv, lv.upper())}-{prefix}" for lv in ("system", "software"))
     pattern = onto.classes["Requirement"]["id_pattern"]
     read = {v.eid for v in reqs}
     for m in _BOLD_ITEM.finditer(text):         # looks like a requirement, but ESAM can't read it as one
         if m["id"] not in read:
             F.append(_f("error", "requirement id", m["id"], f"not readable as a requirement: use the form "
-                        f"{prefix}0NN (e.g. {prefix}010), so it matches {pattern}", "SE manual §9.6"))
+                        f"{sys_form}0NN for a system requirement or {sw_form}0NN for a software requirement "
+                        f"(e.g. {sw_form}010), so it matches {pattern}", "SE manual §9.6"))
     elsewhere = {v["eid"]: v["props"].get("source_artifact") for v in graph.snapshot()["vertices"]
                  if v["label"] == "Requirement" and v["props"].get("source_artifact") != doc["id"]}
     ids = [v.eid for v in reqs]
@@ -202,9 +210,27 @@ def check_srs(text: str, brief: dict, assessment: dict, graph: GraphStore, lib: 
     methods, swcis = onto.allowed("verification_method"), onto.allowed("software_criticality")
     for v in reqs:
         p, rid, low = v.props, v.eid, f" {v.props['text'].lower()} "
-        if not re.match(pattern, rid) or not rid.startswith(prefix):
-            F.append(_f("error", "requirement id", rid, f"renumber it {prefix}010 to {prefix}099 (001-009 are document numbers: "
-                        f"{doc['id']} is this document); the form is {pattern}", "ontology Requirement.id_pattern"))
+        if not re.match(pattern, rid) or not id_parts(rid)[1].startswith(prefix):      # the level marker (SYS-SRS-…) aside
+            F.append(_f("error", "requirement id", rid, f"renumber it {sys_form}010 to {sys_form}099 (system) or {sw_form}010 to "
+                        f"{sw_form}099 (software); 001-009 are document numbers: {doc['id']} is this document; "
+                        f"the form is {pattern}", "ontology Requirement.id_pattern"))
+        # System or software: the id says it (SYS-SRS-… / SW-SRS-…). An unmarked id is accepted and read as the
+        # ontology's `unmarked` level (system); a Level: line or wording that says otherwise is reported.
+        marker = id_parts(rid, rules)[0]
+        if p.get("level_as_written"):
+            F.append(_f("error", "requirement level", rid, f"Level: {p['level_as_written']!r} is not 'system' or 'software'",
+                        "ontology requirement_classification"))
+        if p.get("level_expected"):
+            why = (f"its attribute line says 'Level: {p['level_expected']}'" if p["level_expected_by"] == "stated"
+                   else f"its wording reads as a {p['level_expected']} requirement (\"{shall_subject(p['text'])} shall\")")
+            says = (f"the id says {p['level']} requirement" if marker else
+                    f"the id has no SYS- or SW- marker, so it is read as a {p['level']} requirement")
+            F.append(_f("error" if p["level_expected_by"] == "stated" else "warning", "requirement level", rid,
+                        f"{says}, but {why}: if it is a {p['level_expected']} requirement, number it "
+                        f"{id_for(rid, p['level_expected'], rules)}", "ontology requirement_classification"))
+        elif not marker and re.match(pattern, rid):
+            F.append(_f("warning", "requirement level", rid, f"no SYS- or SW- marker: read as a {p['level']} requirement. "
+                        f"Number it {id_for(rid, p['level'], rules)} to say so", "ontology requirement_classification"))
         if ids.count(rid) > 1:
             F.append(_f("error", "requirement id", rid, "used twice in this document", "DI-IPSC-81433A 3"))
         if rid in elsewhere:
@@ -240,7 +266,7 @@ def check_srs(text: str, brief: dict, assessment: dict, graph: GraphStore, lib: 
         if not traces:
             F.append(_f("error", "traceability", rid, "no Traces to attribute", "DI-IPSC-81433A 5a"))
         for t in traces:
-            ok = t in ssf or t in graph_ids or t in src_secs
+            ok = t in ssf or t in graph_ids or t in src_secs or t in read       # `read`: a requirement of this draft (its parent)
             if not ok and (m := _SOURCE_REF.match(t)) and m["doc"] in src_secs:
                 ok = m["sec"] is None or m["sec"] in src_secs[m["doc"]]
             if not ok:
@@ -269,6 +295,20 @@ def check_srs(text: str, brief: dict, assessment: dict, graph: GraphStore, lib: 
             if not r["ok"]:
                 F.append(_f("error", "standards trace", rid, f"Basis {b!r}: {r['reason']}", "standards library"))
 
+    # Flow-down: a software requirement names the system requirement it derives from; a system requirement
+    # that nothing derives from is worth a look (it may be met by hardware alone).
+    level = {v.eid: v.props["level"] for v in reqs}
+    derived_from = {t for v in reqs if v.props["level"] == "software" for t in v.props.get("traces_to") or []}
+    for v in reqs:
+        if v.props["level"] == "system" and v.eid not in derived_from and any(lv == "software" for lv in level.values()):
+            F.append(_f("warning", "flow-down", v.eid, "a system requirement that no software requirement of this document "
+                        "traces to: add it to the 'Traces to' of the software requirements that implement it, or say "
+                        "that software has no part in it", "DI-IPSC-81433A 5a"))
+        for t in v.props.get("traces_to") or []:
+            if v.props["level"] == "system" and level.get(t) == "software":
+                F.append(_f("error", "flow-down", v.eid, f"a system requirement traces to the software requirement {t}; "
+                            "the trace goes from software up to system", "DI-IPSC-81433A 5a"))
+
     # Coverage: SSFs, source sections, interfaces.
     traced = {t for v in reqs for t in v.props.get("traces_to") or []}
     for x in assessment["ssfs"]:
@@ -296,8 +336,10 @@ def check_srs(text: str, brief: dict, assessment: dict, graph: GraphStore, lib: 
 
     errors = sum(f["level"] == "error" for f in F)
     return {"ok": errors == 0, "errors": errors, "warnings": len(F) - errors, "findings": F,
-            "requirements": [{"id": v.eid, "section": req_section[v.eid], **{k: v.props.get(k) for k in
-                              ("text", "verification", "safety", "timing", "traces_to", "basis")}} for v in reqs],
+            "requirements": [{"id": v.eid, "level": v.props["level"], "section": req_section[v.eid],
+                              **{k: v.props.get(k) for k in
+                                 ("text", "verification", "safety", "timing", "traces_to", "basis")}} for v in reqs],
+            "levels": {lv: sum(v.props["level"] == lv for v in reqs) for lv in ("system", "software")},
             "draft_sha": sha(text)}
 
 
@@ -316,9 +358,9 @@ def evidence_pack(text: str, brief: dict, assessment: dict, lint: dict, lib: Lib
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["requirement", "section", "text", "verification", "safety", "timing", "traces_to", "basis", "verified_by"])
+    w.writerow(["requirement", "level", "section", "text", "verification", "safety", "timing", "traces_to", "basis", "verified_by"])
     for r in reqs:
-        w.writerow([r["id"], r["section"], r["text"], " ".join(r["verification"] or []), r["safety"] or "",
+        w.writerow([r["id"], r.get("level", ""), r["section"], r["text"], " ".join(r["verification"] or []), r["safety"] or "",
                     r["timing"] or "", "; ".join(r["traces_to"] or []), "; ".join(r["basis"] or []), "none yet (no STD)"])
     (folder / "traceability_matrix.csv").write_text(buf.getvalue())
     files["traceability_matrix"] = folder / "traceability_matrix.csv"
@@ -375,7 +417,8 @@ def evidence_pack(text: str, brief: dict, assessment: dict, lint: dict, lib: Lib
          "", "| | |", "|---|---|",
          f"| Subsystem | {doc['attached_to']} ({assessment['subsystem'].get('name')}) |",
          f"| CSCI SwCI (highest of its SSFs) | {assessment['csci_swci'] or 'none assessed'} |",
-         f"| Requirements | {len(reqs)} ({sum(1 for r in reqs if r['safety'])} safety) |",
+         f"| Requirements | {len(reqs)}: {sum(1 for r in reqs if r.get('level') == 'system')} system, "
+         f"{sum(1 for r in reqs if r.get('level') == 'software')} software ({sum(1 for r in reqs if r['safety'])} safety) |",
          f"| Lint | {lint['errors']} errors, {lint['warnings']} warnings (brief: {sum(f['level'] == 'error' for f in assessment['findings'])} errors, "
          f"{sum(f['level'] == 'warning' for f in assessment['findings'])} warnings) |",
          f"| Brief | `{brief['_path']}` (SHA-256 {brief['_sha']}) |",
@@ -384,7 +427,7 @@ def evidence_pack(text: str, brief: dict, assessment: dict, lint: dict, lib: Lib
          f"| Generated | {provenance['generated']} |", "",
          "## Contents", "", "- `" + draft.name + "`: the candidate SRS",
          "- `compliance_matrix.md`: DID outline, SSFs and SwCI, every standards citation resolved",
-         "- `traceability_matrix.csv`: every requirement with its attributes (DI-IPSC-81433A 5a)",
+         "- `traceability_matrix.csv`: every requirement with its level (system or software) and attributes (DI-IPSC-81433A 5a)",
          "- `lint.md`, `lint.json`: every finding with the rule and clause it applies",
          "- `se_reviewer_memo.md` (when the crew ran): the SE Reviewer agent's value, basis and hazard review", "",
          "## Standards library used", ""]

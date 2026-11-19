@@ -16,7 +16,7 @@ the Cockpit shows the real gaps and the test can be re-run at any time. The
 result of this run replaces the last one in the run log; the Cockpit
 Dashboard shows it.
 
-Prerequisites: lessons 03 and 04 have been run. Without ESAM_CHAT_* only the
+Prerequisites: lessons 03 and 04 have been run. Without ESAM_REASONING_* only the
 deterministic checks run (no model answers).
 """
 

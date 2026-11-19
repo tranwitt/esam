@@ -123,9 +123,21 @@ interfaces:
 # Artifacts. `file` is relative to data/documents/; the file stem equals the
 # artifact id, so documents link to graph nodes by EXACT id (the earlier
 # script guessed links from file names).
+# `attached_to` is a subsystem. A system-level document (an SSDD) may instead be
+# attached to the vehicle system or to one system (the ontology's
+# document_types.ssdd.attaches_to), e.g.:
+#   - { id: SSDD-LTV-001, name: "...", type: ssdd, revision: A, attached_to: V-001, file: SSDD-LTV-001.md }
+# (lessons/06_missing_document/staged/SSDD-LTV-001.md is one to ingest through Pipeline A.)
+# An owner may have several documents of one type. Parts of one document each get
+# their own id and say which part they are:
+#   - { id: SSDD-LTV-002, ..., attached_to: V-001, part: "2 of 3", file: SSDD-LTV-002.md }
 artifacts:
   - { id: ICD-BRK-001,  name: "Brake ECU J1939 Interface Control Document", type: icd,  revision: A, attached_to: SUB-BRK-ECU, file: ICD-BRK-001.md }
   - { id: SDD-BRK-001, name: "Brake Control ECU Software Design",          type: sdd, revision: A, attached_to: SUB-BRK-ECU, file: SDD-BRK-001.md }
   - { id: SRS-BRK-001,  name: "Brake Control ECU Software Requirements",    type: srs,  revision: A, attached_to: SUB-BRK-ECU, file: SRS-BRK-001.md }
   - { id: SDD-DCL-001, name: "Driver Digital Cluster Software Design",     type: sdd, revision: A, attached_to: SUB-DCL,     file: SDD-DCL-001.md }
   - { id: SRS-DCL-001,  name: "Driver Digital Cluster Software Requirements", type: srs, revision: A, attached_to: SUB-DCL,    file: SRS-DCL-001.md }
+  # System-level documents, delivered as Word 97-2003 files with pictures and drawn diagrams. The files as
+  # delivered are in data/documents/originals/; the .md beside the others is what Pipeline A read from them.
+  - { id: SSDD-SUSP-001, name: "Suspension/Steering System Design Description", type: ssdd, revision: A, attached_to: SYS-SUSP, file: SSDD-SUSP-001.md }
+  - { id: SSDD-PWR-001, name: "Power Package/Drive Train System Design Description", type: ssdd, revision: A, attached_to: SYS-PWR, file: SSDD-PWR-001.md }

@@ -73,6 +73,11 @@ class VectorStore(ABC):
     def reset(self) -> None:
         """Delete the whole collection (lessons use this to start clean)."""
 
+    def sources(self) -> dict[str, int]:
+        """{source file: chunks stored}. Used to find what a full re-ingest
+        should remove: chunks of files the baseline no longer lists."""
+        raise NotImplementedError
+
     # ── shared helper ───────────────────────────────────────────────────────
     @staticmethod
     def check_model(collection: str, stored_id: str, stored_dim: int,

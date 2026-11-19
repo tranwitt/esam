@@ -7,7 +7,7 @@ reach, and the chat model writes it up.
     python lessons/05_hybrid/hybrid.py --show-prompt "..."   # also print the prompt sent
 
 Prerequisites: lesson 03 ingest.py and lesson 04 load_graph.py have been run.
-Without ESAM_CHAT_* configured it does everything except the final model
+Without ESAM_REASONING_* configured it does everything except the final model
 call, and prints the prompt instead (dry run).
 
 The steps (the code is in esamkit/hybrid.py, so the Cockpit and agents run it too):
@@ -58,7 +58,7 @@ def main() -> None:
         print("\n" + "─" * 78 + "\nPROMPT\n" + "─" * 78)
         print("[system]\n" + SYSTEM_PROMPT + "\n\n[user]\n" + r["prompt"])
     if not chat_configured():
-        print("\n(dry run: set ESAM_CHAT_BASE_URL and ESAM_CHAT_MODEL to send this to a model)")
+        print("\n(dry run: set ESAM_REASONING_BASE_URL and ESAM_REASONING_MODEL to send this to a model)")
         return
     print("\n" + "─" * 78 + "\n5. ANSWER\n" + "─" * 78)
     print(complete(SYSTEM_PROMPT, r["prompt"]))

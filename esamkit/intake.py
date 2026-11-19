@@ -20,8 +20,15 @@ decide them:
 Adding the baseline line edits the SE's YAML as text (one line appended to
 `artifacts:`), so its comments and layout survive; `undo` removes that exact
 line.
+
+A document may arrive as markdown, as a Word file (.docx, .doc), or as a
+picture. `receive` (before A1) converts it to markdown once
+(esamkit/readers.py), describing its diagrams; the pipeline reviews, and the
+SE approves, that markdown. On ingest the markdown goes to data/documents/
+and the file as delivered is kept next to it in data/documents/originals/.
 """
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -33,12 +40,104 @@ from .config import Settings, settings as default_settings
 from .embedders.base import Embedder
 from .graphstores.base import GraphStore
 from .ingest import ingest_file, make_chunks
-from .ontology import Ontology, check_baseline
-from .traceability import load_traceability, read_requirements, read_test_cases
+from .diagram_baseline import DiagramBaselineError
+from .ontology import Ontology, check_baseline, find_node, part_sets
+from .readers import PICTURES, convert
+from .traceability import (_ID, LEVELS, classification_rules, id_for, id_parts, load_traceability, read_requirements,
+                           read_test_cases, shall_subject)
 from .vectorstores.base import VectorStore
 
 _TITLE = re.compile(r"^#\s+(?P<id>[A-Z]+-[A-Z0-9]+-\d{3})\s*[—–-]\s*(?P<name>.+?)\s*$")
 _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
+
+
+_OWNER_COLUMNS = ("subsystem", "system", "vehicle", "attached to", "attached_to")
+_REQ_ID = re.compile(r"^((SYS|SW)-)?SRS-[A-Z0-9]+-0[1-9]\d$")      # a requirement id (ontology: classes.Requirement.id_pattern)
+ORIGINALS = "originals"
+
+
+def diagram_baseline_mode(s: Settings = default_settings, override: str | None = None) -> str:
+    from .diagram_baseline import mode_of
+    return mode_of(s, override)
+
+
+def baseline_proposal(pictures: list, s: Settings, document: str) -> dict:
+    from .diagram_baseline import for_document
+    return for_document(pictures, s, document)
+
+
+def apply_baseline_proposal(proposal: dict, baseline_yaml: Path) -> dict:
+    from .diagram_baseline import apply
+    return apply(proposal, baseline_yaml)
+
+
+def revert_baseline_additions(record: dict | None, baseline_yaml: Path) -> dict:
+    from .diagram_baseline import revert
+    return revert(record, baseline_yaml)       # data/documents/originals/: Word and picture files as they were delivered
+
+
+# ── Before A1: whatever arrived becomes markdown ─────────────────────────────
+
+def receive(path: Path, incoming: Path, s: Settings = default_settings, overrides: dict | None = None,
+            diagram_baseline: str | None = None) -> dict:
+    """Read an arriving file and put the markdown the pipeline will review in
+    `incoming/<ID>.md`. A file that was not plain markdown is also kept as it
+    came, in `incoming/original/`. `overrides` are fields the SE supplies
+    (id, name, type, revision, attached_to) for what the document does not
+    state: a picture states nothing, so it needs at least id.
+
+    With `diagram_baseline` (or ESAM_DIAGRAM_BASELINE) at "propose" or
+    "apply", the document's pictures are also analysed for the systems and
+    subsystems they show, and what the baseline lacks is returned as
+    "baseline_proposal" (esamkit/diagram_baseline.py) and saved as
+    `incoming/baseline_proposal.json`. Nothing is changed here: "apply" takes
+    effect when the document is ingested.
+
+    Returns {"entry", "document", "original", "conversion",
+    "diagram_baseline", "baseline_proposal"}; entry has no "id" when the
+    document does not say what it is."""
+    overrides = overrides or {}
+    title = None
+    if path.suffix.lower() in PICTURES and overrides.get("id"):
+        title = f"{overrides['id']} — {overrides.get('name') or path.stem}"
+    conv = convert(path, s, diagrams=True, title=title)
+    entry = {**read_header(conv.text), **overrides}
+    mode = diagram_baseline_mode(s, diagram_baseline)
+    out = {"entry": entry, "document": None, "original": None, "conversion": None,
+           "diagram_baseline": mode, "baseline_proposal": None}
+    if not entry.get("id"):
+        return out
+    entry["file"] = f"{entry['id']}.md"
+    incoming.mkdir(parents=True, exist_ok=True)
+    if conv.changed:
+        (incoming / entry["file"]).write_text(conv.text)
+        (incoming / "original").mkdir(exist_ok=True)
+        shutil.copy2(path, incoming / "original" / path.name)
+        out["original"] = f"{incoming.name}/original/{path.name}"
+        out["conversion"] = {"from": path.name, **conv.report()}
+    else:
+        shutil.copy2(path, incoming / entry["file"])
+    out["document"] = f"{incoming.name}/{entry['file']}"
+    if mode != "off" and conv.pictures:
+        out["baseline_proposal"] = baseline_proposal(conv.pictures, s, entry["id"])
+        (incoming / "baseline_proposal.json").write_text(json.dumps(out["baseline_proposal"], indent=1, ensure_ascii=False))
+    return out
+
+
+def conversion_attention(conversion: dict | None) -> list[str]:
+    """What an SE must check by eye when the document was converted."""
+    if not conversion:
+        return []
+    out = [f"Converted from {conversion['from']} ({conversion['converter']}): requirements, tables and numbers "
+           "below were read from the converted text; spot-check them against the original."]
+    out += [f"Conversion note: {n}" for n in conversion.get("notes") or []]
+    for p in conversion.get("pictures") or []:
+        if any(r.startswith("vision model") for r in p.get("read_by") or []):
+            out.append(f"Picture {p['n']} ({p['name']}): described by a model. Compare the description with the picture.")
+        elif not p.get("read_by"):
+            out.append(f"Picture {p['n']} ({p['name']}): NOT described ({p.get('note') or 'no text found'}); "
+                       "its content is not searchable.")
+    return out
 
 
 # ── A1 ───────────────────────────────────────────────────────────────────────
@@ -46,6 +145,10 @@ _SECTION = re.compile(r"^#{2,3}\s+(?P<title>.+?)\s*$")
 def read_header(text: str) -> dict:
     """The baseline entry the document describes itself as: its title line
     `# <ID> — <name>` and the `| Document | Type | Revision | Subsystem |` table.
+    The last column is what the document is attached to; for a system-level
+    document (an SSDD on V-001 or SYS-…) it may be headed System, Vehicle or
+    Attached to instead. A document that is one part of several adds a Part
+    column: `2 of 3`.
     Fields it doesn't state are left out (the ontology check reports them)."""
     entry: dict = {}
     lines = text.splitlines()
@@ -59,9 +162,11 @@ def read_header(text: str) -> dict:
             values = [c.strip() for c in lines[i + 2].strip().strip("|").split("|")]
             row = dict(zip(cells, values))
             entry.setdefault("id", row.get("document", ""))
-            for key, col in (("type", "type"), ("revision", "revision"), ("attached_to", "subsystem")):
-                if row.get(col):
-                    entry[key] = row[col].lower() if key == "type" else row[col]
+            for key, cols in (("type", ("type",)), ("revision", ("revision",)), ("attached_to", _OWNER_COLUMNS),
+                              ("part", ("part", "volume"))):
+                if value := next((row[c] for c in cols if row.get(c)), None):
+                    entry[key] = (value.lower() if key == "type"
+                                  else re.sub(r"\s*(?:of|/)\s*", " of ", value.strip().lower()) if key == "part" else value)
             break
     if entry.get("id"):
         entry.setdefault("type", entry["id"].split("-")[0].lower())   # the ontology ties type to the id prefix
@@ -90,31 +195,35 @@ def ontology_check(onto: Ontology, baseline_yaml: Path, entry: dict) -> dict:
         if (len(new), new) <= (len(old), old):
             findings.append({"level": "error", "where": entry["id"],
                              "message": f"already in the baseline at revision {old}; a replacement needs a later revision, not {new or 'none'}"})
-    subsystem = _subsystem(data, entry.get("attached_to"))
+    owner_class, owner = find_node(data, entry.get("attached_to")) or (None, None)
+    subsystem = owner if owner_class == "Subsystem" else None
     required = {}
     if subsystem is not None:
         has_ifaces = any(entry.get("attached_to") in (i.get("from"), i.get("to")) for i in data.get("interfaces") or [])
         required = onto.required_documents({**subsystem, "safety_critical": subsystem.get("safety_critical") is True},
                                            has_ifaces)
     dtype = onto.document_types.get(entry.get("type", ""), {})
+    # Other documents of this type on the same owner: this one is in addition to them, not a replacement.
+    same = lambda a: (str(a.get("type", "")).lower() == str(entry.get("type", "")).lower()        # noqa: E731
+                      and a.get("attached_to") == entry.get("attached_to"))
+    siblings = [{"id": a.get("id"), "name": a.get("name"), "revision": a.get("revision"), "part": a.get("part")}
+                for a in arts if a is not current and same(a)]
+    part_set = next((ps for ps in part_sets(data["artifacts"]) if entry.get("part") and same(ps)), None)
     return {"entry": entry, "findings": findings,
             "ok": not any(f["level"] == "error" for f in findings),
             "replaces_revision": current.get("revision") if current else None,
             "document_type": {"code": entry.get("type"), "name": dtype.get("name"), "standard": dtype.get("standard")},
-            "subsystem": {"id": entry.get("attached_to"), "name": (subsystem or {}).get("name"),
+            # what the document is attached to. Kept under "subsystem" for its readers; "class" says what it is
+            # (Subsystem, or Vehicle / System for a system-level document such as an SSDD).
+            "subsystem": {"id": entry.get("attached_to"), "name": (owner or {}).get("name"), "class": owner_class,
                           "safety_critical": bool((subsystem or {}).get("safety_critical"))},
+            "may_attach_to": onto.attach_classes(entry.get("type")),
+            "same_type_documents": siblings,
+            "part": ({"this": entry.get("part"), "total": part_set["total"],
+                      "present_after_ingest": part_set["documents"], "still_missing": part_set["missing"]}
+                     if part_set else None),
             "required_by_rules": required.get(entry.get("type", ""), []),
             "subsystem_requires": list(required)}
-
-
-def _subsystem(data: dict, sid: str | None) -> dict | None:
-    for fam in (data.get("vehicle") or {}).get("families", []):
-        for var in fam.get("variants", []):
-            for sysm in var.get("systems", []):
-                for sub in sysm.get("subsystems", []):
-                    if sub.get("id") == sid:
-                        return sub
-    return None
 
 
 # ── A2 ───────────────────────────────────────────────────────────────────────
@@ -135,7 +244,7 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         cases = []
         for tc in tcs:
             p = tc.props
-            cited = [{"id": r, "exists": r in reqs, "text": reqs.get(r, {}).get("text", ""),
+            cited = [{"id": r, "exists": r in reqs, "level": reqs.get(r, {}).get("level"), "text": reqs.get(r, {}).get("text", ""),
                       "already_verified_by": [t["eid"] for t in graph.verified_by(r) if t["document"] != aid]}
                      for r in p["verifies"]]
             cases.append({"id": p["id"], "title": p["name"], "method": p["method"],
@@ -156,24 +265,70 @@ def review_document(text: str, entry: dict, graph: GraphStore, s: Settings = def
         out["still_untested"] = [r["eid"] for r in graph.untested_requirements()
                                  if r["subsystem"] == entry.get("attached_to") and r["eid"] not in covered]
     elif dtype == "srs":
+        # Every requirement is a SYSTEM or a SOFTWARE requirement and its id says which (SYS-SRS-… / SW-SRS-…;
+        # plain SRS-… is taken as system). Its `Level:` line and its wording are the cross-check (traceability.classify).
+        rules = classification_rules()
+        markers = rules["id_marker"]
         found = read_requirements(text, aid, entry.get("attached_to", "")).vertices
         others = {r for r, p in reqs.items() if p.get("source_artifact") != aid}
-        out["requirements"] = [{"id": v.eid, "text": v.props["text"], "section": v.props["section"]} for v in found]
+        here = {v.eid: v.props for v in found}
+        level_of = lambda rid: (here.get(rid) or reqs.get(rid) or {}).get("level")            # noqa: E731
+        out["requirements"] = []
+        for v in found:
+            p = v.props
+            parents = [{"id": r, "exists": r in here or r in reqs, "level": level_of(r),
+                        "text": (here.get(r) or reqs.get(r) or {}).get("text", "")}
+                       for ref in p.get("traces_to", []) for r in _ID.findall(ref) if _REQ_ID.match(r)]
+            out["requirements"].append({"id": v.eid, "level": p["level"], "level_source": p["level_source"],
+                                        "text": p["text"], "section": p["section"], "traces_to": parents})
+            if p.get("level_as_written"):
+                out["issues"].append(f"{v.eid}: Level: {p['level_as_written']!r} is not 'system' or 'software'")
+            if p.get("level_expected"):
+                why = ("its attribute line says 'Level: " + p["level_expected"] + "'" if p["level_expected_by"] == "stated"
+                       else f"its wording reads as a {p['level_expected']} requirement (\"{shall_subject(p['text'])} shall\")")
+                says = (f"the id has no SYS- or SW- marker, so it is read as a {p['level']} requirement, but"
+                        if id_parts(v.eid, rules)[0] is None else f"the id says {p['level']} requirement, but")
+                out["issues"].append(f"{v.eid}: {says} {why}. If it is a "
+                                     f"{p['level_expected']} requirement, number it {id_for(v.eid, p['level_expected'], rules)}")
+            if p["level_source"] != "id":
+                out["issues"].append(f"{v.eid}: the id does not say whether this is a system or a software requirement: "
+                                     f"use {markers.get('system', 'SYS')}-SRS-<code>-0NN (system) or "
+                                     f"{markers.get('software', 'SW')}-SRS-<code>-0NN (software). "
+                                     f"Taken as {p['level']} ({p['level_source']})")
+            for parent in parents:
+                if not parent["exists"]:
+                    out["issues"].append(f"{v.eid}: traces to {parent['id']}, which is not a requirement in this document or the graph")
+                elif p["level"] == "system" and parent["level"] == "software":
+                    out["issues"].append(f"{v.eid}: a system requirement traces to the software requirement {parent['id']}; "
+                                         "the trace goes from software up to system")
+        out["levels"] = {lv: sum(r["level"] == lv for r in out["requirements"]) for lv in LEVELS}
+        # which system requirements a software requirement (here or already in the graph) traces to
+        children: dict[str, set[str]] = {}
+        for r in out["requirements"]:
+            for parent in r["traces_to"]:
+                children.setdefault(parent["id"], set()).add(r["id"])
+        for e in snap["edges"]:
+            if e["type"] == "TRACES_TO" and e["from_eid"] not in here:
+                children.setdefault(e["to_eid"], set()).add(e["from_eid"])
+        for r in out["requirements"]:
+            if r["level"] == "system":
+                r["traced_by"] = sorted(children.get(r["id"], ()))
         ids = [v.eid for v in found]
         out["issues"] += [f"{i}: requirement id used twice" for i in sorted({i for i in ids if ids.count(i) > 1})]
         out["issues"] += [f"{v.eid}: already specified in {reqs[v.eid]['source_artifact']}" for v in found if v.eid in others]
         out["issues"] += [f"{v.eid}: no 'shall'" for v in found if " shall " not in f" {v.props['text'].lower()} "]
         if not found:
-            out["issues"].append("no requirement lines ('- **SRS-…** The software shall …') found")
+            out["issues"].append("no requirement lines ('- **SW-SRS-…** The software shall …' or "
+                                 "'- **SYS-SRS-…** The <unit> shall …') found")
     return out
 
 
 # ── A3 ───────────────────────────────────────────────────────────────────────
 
 def baseline_line(entry: dict) -> str:
-    keys = ("id", "name", "type", "revision", "attached_to", "file")
+    keys = ("id", "name", "type", "revision", "attached_to", "part", "file")
     parts = [f"{k}: {yaml.safe_dump(entry[k], default_flow_style=True, width=1000).strip().removesuffix('...').strip()}"
-             if k == "name" else f"{k}: {entry[k]}" for k in keys if k in entry]
+             if k == "name" else f'{k}: "{entry[k]}"' if k == "part" else f"{k}: {entry[k]}" for k in keys if k in entry]
     return "  - { " + ", ".join(parts) + " }"
 
 
@@ -201,24 +356,50 @@ def reload_graph(graph: GraphStore, s: Settings = default_settings) -> dict:
     return load_traceability(graph, base, s.documents_dir)
 
 
+def _original_files(s: Settings, doc_id: str) -> list[Path]:
+    folder = s.documents_dir / ORIGINALS
+    return sorted(p for p in folder.glob(f"{doc_id}.*") if p.is_file()) if folder.is_dir() else []
+
+
 def ingest(source: Path, entry: dict, emb: Embedder, store: VectorStore, graph: GraphStore,
-           backup_dir: Path, s: Settings = default_settings) -> dict:
+           backup_dir: Path, s: Settings = default_settings, original: Path | None = None,
+           baseline_proposal: dict | None = None) -> dict:
     """Put the document into the baseline and both stores. Returns the
     manifest `undo` needs. A new revision replaces the old file and line
-    (both kept in `backup_dir`)."""
+    (both kept in `backup_dir`). `source` is the markdown; `original` is the
+    Word or picture file it was converted from, if any, kept as
+    data/documents/originals/<ID>.<ext>. `baseline_proposal` (from
+    `receive`, diagram baseline mode "apply") adds the systems and
+    subsystems its diagrams show to the baseline, as candidates; if they
+    cannot be added the document is still ingested and the manifest says why."""
     target = s.documents_dir / entry["file"]
     manifest: dict = {"entry": entry, "file": str(target), "line": baseline_line(entry),
-                      "previous_file": None, "previous_line": None}
+                      "previous_file": None, "previous_line": None, "original": None, "previous_originals": [],
+                      "baseline_additions": None}
     backup_dir.mkdir(parents=True, exist_ok=True)
     if target.exists():
         manifest["previous_file"] = str(backup_dir / target.name)
         shutil.copy2(target, manifest["previous_file"])
+    for old_original in _original_files(s, entry["id"]):       # the previous revision's Word / picture file
+        (backup_dir / ORIGINALS).mkdir(exist_ok=True)
+        shutil.move(str(old_original), backup_dir / ORIGINALS / old_original.name)
+        manifest["previous_originals"].append(str(backup_dir / ORIGINALS / old_original.name))
+    if original is not None:
+        kept = s.documents_dir / ORIGINALS / f"{entry['id']}{original.suffix.lower()}"
+        kept.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(original, kept)
+        manifest["original"] = str(kept)
     old = next((ln for ln in s.baseline_yaml.read_text().splitlines()
                 if re.match(rf"^\s*- \{{\s*id:\s*{re.escape(entry['id'])}\s*,", ln)), None)
     if old:
         manifest["previous_line"] = old
         _remove_line(s.baseline_yaml, old)
     _append_artifact(s.baseline_yaml, manifest["line"])
+    if baseline_proposal and baseline_proposal.get("additions"):
+        try:
+            manifest["baseline_additions"] = apply_baseline_proposal(baseline_proposal, s.baseline_yaml)
+        except DiagramBaselineError as e:
+            manifest["baseline_additions"] = {"applied": [], "blocks": [], "error": str(e)}
     shutil.copy2(source, target)
     facts = load_baseline(s.baseline_yaml).artifact_index()[entry["file"]]
     manifest["chunks"], manifest["chunks_replaced"] = ingest_file(target, entry["file"], facts, emb, store, s)
@@ -232,8 +413,14 @@ def undo(manifest: dict, store: VectorStore, graph: GraphStore, emb: Embedder | 
     A replaced revision comes back (re-embedded, so `emb` is needed then)."""
     entry, target = manifest["entry"], Path(manifest["file"])
     removed_line = _remove_line(s.baseline_yaml, manifest["line"])
+    candidates = revert_baseline_additions(manifest.get("baseline_additions"), s.baseline_yaml)
     removed_chunks = store.delete_source(entry["file"])
     target.unlink(missing_ok=True)
+    if manifest.get("original"):
+        Path(manifest["original"]).unlink(missing_ok=True)
+    for kept in manifest.get("previous_originals") or []:
+        (s.documents_dir / ORIGINALS).mkdir(parents=True, exist_ok=True)
+        shutil.copy2(kept, s.documents_dir / ORIGINALS / Path(kept).name)
     if manifest.get("previous_line"):
         _append_artifact(s.baseline_yaml, manifest["previous_line"])
     if manifest.get("previous_file"):
@@ -243,6 +430,8 @@ def undo(manifest: dict, store: VectorStore, graph: GraphStore, emb: Embedder | 
         facts = load_baseline(s.baseline_yaml).artifact_index()[entry["file"]]
         ingest_file(target, entry["file"], facts, emb, store, s)
     return {"baseline_line_removed": removed_line, "chunks_removed": removed_chunks,
+            "baseline_candidates_removed": candidates["reverted"], "baseline_candidates_kept": candidates["kept"],
+            **({"baseline_candidates_note": candidates["why"]} if candidates.get("why") else {}),
             "previous_revision_restored": bool(manifest.get("previous_file")),
             "traceability": reload_graph(graph, s)}
 
@@ -276,7 +465,7 @@ def verify_ingestion(entry: dict, review: dict, manifest: dict, emb: Embedder, s
 
     stored = chunk_counts(s.pg_dsn, s.collection).get(aid, 0)
     check("chunks stored", stored == manifest["chunks"] == review["chunks"], review["chunks"], stored)
-    owners = [r["eid"] for r in graph.ancestors(aid) if r["label"] == "Subsystem"]
+    owners = [r["eid"] for r in graph.ancestors(aid) if r["depth"] == 1]     # the first hop up: what it is attached to
     check("document attached in the graph", entry["attached_to"] in owners, entry["attached_to"], owners or "not in graph")
     snap = graph.snapshot()
     derived = {v["eid"] for v in snap["vertices"] if v["props"].get("source_artifact") == aid}
@@ -292,6 +481,12 @@ def verify_ingestion(entry: dict, review: dict, manifest: dict, emb: Embedder, s
     hits = store.search(emb.embed_query(entry.get("name", aid)), k=3)
     found = [h.chunk.artifact_id for h in hits]
     check("search by title finds it", aid in found, aid, found)
+    added = (manifest.get("baseline_additions") or {}).get("applied") or []
+    if added:
+        in_graph = {v["eid"] for v in graph.snapshot()["vertices"]
+                    if v["label"] in ("System", "Subsystem") and v["props"].get("status") == "candidate"}
+        check("systems and subsystems from the diagrams are in the graph as candidates",
+              set(added) <= in_graph, sorted(added), sorted(set(added) & in_graph))
     integrity = next(c for c in health_after["checks"] if c["id"] == 5)
     check("integrity (health check 5)", integrity["status"] == "pass", "pass",
           integrity["status"] if integrity["status"] == "pass" else [f["message"] for f in integrity["findings"]])

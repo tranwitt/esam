@@ -26,7 +26,7 @@
 
 metadata:
   name: "ESAM ontology"
-  version: "0.3"
+  version: "0.12"
   owner: "SE team"
   standards:
     - "MIL-STD-881F Appendix G: WBS structure and codes"
@@ -57,6 +57,11 @@ value_sets:
     "SwCI 3": "Medium"
     "SwCI 4": "Low"
     "SwCI 5": "No safety impact"
+  # Whose requirement it is. Every requirement read from an SRS is one or the
+  # other, and its ID says which (`requirement_classification` below).
+  requirement_level:
+    system: "System requirement: what the subsystem (or the vehicle) as a whole must do, whatever mix of hardware and software does it"
+    software: "Software requirement: what the software itself must do"
   verification_method:
     I: "Inspection"
     A: "Analysis"
@@ -107,6 +112,12 @@ classes:
     attributes:
       wbs_code: { type: wbs, required: true }
       universality: { type: enum, values: universality }
+      # Set by ESAM when it adds this entry from a diagram (esamkit/diagram_baseline.py).
+      # `candidate` = proposed by a tool, awaiting an SE: a required attribute the diagram
+      # could not give may still be missing (a warning, not an error). When you have
+      # checked the entry, fill those in and delete the `status` line (or set confirmed).
+      status: { type: enum, values: link_status, description: "candidate = read from a diagram, not yet reviewed by an SE" }
+      derived_from: { type: text, description: "The document and picture a candidate was read from" }
   Subsystem:
     description: "A unit inside a system that has its own design, documents and interfaces, e.g. the Brake Control ECU."
     id_pattern: '^SUB-[A-Z0-9-]+$'
@@ -120,6 +131,12 @@ classes:
       tsn_profile: { type: text }
       repo_url: { type: text }
       jira_component: { type: text }
+      # Set by ESAM when it adds this entry from a diagram (esamkit/diagram_baseline.py).
+      # `candidate` = proposed by a tool, awaiting an SE: a required attribute the diagram
+      # could not give may still be missing (a warning, not an error). When you have
+      # checked the entry, fill those in and delete the `status` line (or set confirmed).
+      status: { type: enum, values: link_status, description: "candidate = read from a diagram, not yet reviewed by an SE" }
+      derived_from: { type: text, description: "The document and picture a candidate was read from" }
   Function:
     description: "Something a subsystem does, e.g. wheel-slip regulation."
     id_pattern: '^FN-[A-Z0-9-]+$'
@@ -128,22 +145,34 @@ classes:
       description: { type: text, description: "One sentence. Used to match documents and questions to this function." }
       safety_classification: { type: text, pattern: '^(MIL-STD-882E )?SwCI [1-5]$' }
   DesignArtifact:
-    description: "A controlled document attached to a subsystem."
+    description: "A controlled document attached to the thing it describes: a subsystem, or for a system-level document (SSDD) the vehicle or one of its systems."
     id_pattern: '^(ICD|SRS|SDD|SSDD|STD|STP|STR)-[A-Z0-9]+-00[1-9]$'
     attributes:
       type: { type: enum, values: document_types, required: true }
       revision: { type: text, pattern: '^[A-Z]{1,2}$', required: true }
+      # Subsystem unless the document's type says otherwise (document_types.<type>.attaches_to).
       attached_to: { type: ref, class: Subsystem, required: true }
       file: { type: text, required: true }
+      # A document delivered in several parts (volumes): each part is its own
+      # document with its own id (SSDD-LTV-001, SSDD-LTV-002, ...), the same
+      # type and the same attached_to, and says which part it is. One owner
+      # may also simply have several documents of one type (two ICDs): those
+      # leave `part` out.
+      part: { type: text, pattern: '^[1-9]\d? of [1-9]\d?$', description: "Which part of a multi-part document this is, e.g. '2 of 3'" }
   # Requirements and test cases are read out of the documents (SRS and STD),
   # not written in the baseline: esamkit/traceability.py. Each records the
   # document it came from, so a new revision replaces what the old one gave.
   Requirement:
-    description: "One 'shall' statement in an SRS, read from its '- **SRS-…**' line."
-    id_pattern: '^SRS-[A-Z0-9]+-0[1-9]\d$'
+    description: "One 'shall' statement in an SRS. Its id says whether it is a system requirement ('- **SYS-SRS-…**', or the unmarked '- **SRS-…**') or a software requirement ('- **SW-SRS-…**')."
+    id_pattern: '^((SYS|SW)-)?SRS-[A-Z0-9]+-0[1-9]\d$'
     source: document
     attributes:
       text: { type: text, required: true }
+      # system | software, and how that was decided (see requirement_classification):
+      #   id       from its id: SYS-SRS-… (or plain SRS-…) is a system requirement, SW-SRS-… a software requirement
+      #   stated / wording / assumed   only for an id that is not an SRS- id (which the review reports)
+      level: { type: enum, values: requirement_level, required: true }
+      level_source: { type: text, description: "id | stated | wording | assumed" }
       section: { type: text }
       subsystem: { type: ref, class: Subsystem }
       source_artifact: { type: ref, class: DesignArtifact, required: true }
@@ -151,7 +180,7 @@ classes:
       verification: { type: text_list, values: verification_method, description: "Verification: I, A, D or T (DI-IPSC-81433A 4)" }
       safety: { type: enum, values: software_criticality, description: "Safety: the SwCI, MIL-STD-882E Table V" }
       timing: { type: text, description: "Timing: a value with units, e.g. '20 ms max'" }
-      traces_to: { type: text_list, description: "Traces to: parent ids (DI-IPSC-81433A 5.a)" }
+      traces_to: { type: text_list, description: "Traces to: parent ids (DI-IPSC-81433A 5.a). A parent that is a requirement (the system requirement a software requirement derives from) becomes a TRACES_TO link" }
       basis: { type: text_list, description: "Basis: standard clauses from the standards library" }
   TestCase:
     description: "One test case in an STD, read from its 'TC-…' heading and fixed fields."
@@ -170,9 +199,9 @@ relationships:
     to: [Vehicle, VehicleFamily, Variant, System, Subsystem]
     meaning: "child is part of parent (the WBS tree)"
   HAS_ARTIFACT:
-    from: [Subsystem]
+    from: [Vehicle, System, Subsystem]
     to: [DesignArtifact]
-    meaning: "subsystem is described by document"
+    meaning: "owner is described by document (which owners a document type may have: document_types.<type>.attaches_to)"
   INTERFACES_WITH:
     from: [Subsystem]
     to: [Subsystem]
@@ -185,9 +214,14 @@ relationships:
   VERIFIES:      { from: [TestCase], to: [Requirement], meaning: "test case verifies requirement (from its Verifies: line)" }
   SPECIFIED_IN:  { from: [Requirement, TestCase], to: [DesignArtifact], meaning: "item is stated in document" }
   ALLOCATED_TO:  { from: [Requirement], to: [Subsystem], meaning: "requirement is met by subsystem (the SRS's subsystem)" }
+  TRACES_TO:     { from: [Requirement], to: [Requirement], meaning: "requirement is derived from another (from its Traces to: line): software requirement -> system requirement" }
 
 # ── Kinds of documents ───────────────────────────────────────────────────────
 # standard:  where the name comes from.
+# attaches_to: the classes a document of this type may be attached to.
+#            Left out = [Subsystem]. The SSDD is the system-level design
+#            (MIL-STD-498 "System/Subsystem"), so it may sit on the whole
+#            vehicle system (V-001), on one system (SYS-…) or on a subsystem.
 # answers:   words in a question that mean this document type would answer it
 #            (replaces the keyword table in esamkit/coverage.py in step 2).
 document_types:
@@ -204,6 +238,7 @@ document_types:
   ssdd:
     name: "System/Subsystem Design Description"
     standard: "MIL-STD-498 / J-STD-016"
+    attaches_to: [Vehicle, System, Subsystem]
     answers: [system design, subsystem design, allocation]
     synonyms: ["system design description"]
   icd:
@@ -245,6 +280,41 @@ placement:
     timing: { type: text, pattern: '^\d+(\.\d+)? ?(ms|s|us)( max| min| ± ?\d+(\.\d+)? ?(ms|s|us))?$', description: "e.g. '20 ms max', '100 ms ± 10 ms'" }
     verification: { values: verification_method }
     traces_to: { type: ref_list, description: "Parent requirement IDs" }
+    level: { values: requirement_level, description: "Optional. Level: system or software; must agree with the requirement's id" }
+
+# ── System requirement or software requirement? ──────────────────────────────
+# The ID says it. Both kinds are written in the SRS, and a marker in front
+# of "SRS-" tells them apart:
+#
+#     - **SYS-SRS-BRK-050** The Brake Control ECU shall prevent wheel lock-up ...   system
+#     - **SW-SRS-BRK-060** The software shall command pressure release ...         software
+#       Verification: T | Traces to: SYS-SRS-BRK-050
+#
+# `id_marker` is that marker for each level. An id with no marker
+# (SRS-BRK-011) is taken as `unmarked` says: a system requirement, until it is
+# marked SW-. The review asks for the marker when its wording reads as software.
+# To use other markers change them here and in classes.Requirement.id_pattern.
+#
+# The rest is a CROSS-CHECK, so a requirement numbered as the wrong kind is
+# noticed: the review reports an id whose level disagrees with
+#   - `Level:` on the requirement's attribute line, or
+#   - the SUBJECT of its "shall" (the words just before "shall"):
+#        "... the software shall ..."        -> software
+#        "The Brake Control ECU shall ..."   -> system
+#     A subject with a software word is software, whatever else it names
+#     ("the ECU software shall"). Add your programme's own words below.
+# An id that is not an SRS- id at all is reported too, and classified by
+# that same check, falling back to `default`.
+requirement_classification:
+  id_marker:
+    system: SYS
+    software: SW
+  unmarked: system
+  default: software
+  subjects:
+    software: [software, firmware, csci, csc, application, program, code, algorithm, task, routine, function block]
+    system: [system, subsystem, vehicle, ecu, ecm, unit, module, controller, cluster, hardware, equipment, assembly,
+             device, sensor, actuator, display, backbone, network, harness]
   test_case_fields:
     verifies: { type: ref_list, class: Requirement, required: true }
     method: { values: verification_method, required: true }

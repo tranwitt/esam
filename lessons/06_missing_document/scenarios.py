@@ -16,13 +16,13 @@ def scenarios():
         Scenario(
             name="brake-std",
             title="Brake ECU test description (STD)",
-            question=("How is SRS-BRK-011 (release brake pressure within 15 ms of incipient wheel "
+            question=("How is SW-SRS-BRK-011 (release brake pressure within 15 ms of incipient wheel "
                       "lock-up) verified? Give the test steps and pass criteria."),
             subsystem="SUB-BRK-ECU", doc_type="std",
             document=STAGED / "STD-BRK-001.md", artifact=arts["STD-BRK-001"],
             expect_cited=["STD-BRK-001", "TC-BRK-011"],
             forbid_before=r"TC-[A-Z]+-\d+",           # an invented test case id
-            verifies={"SRS-BRK-011": "TC-BRK-011"},  # traceability the STD must add (lesson 08)
+            verifies={"SW-SRS-BRK-011": "TC-BRK-011"},  # traceability the STD must add (lesson 08)
         ),
         Scenario(
             name="engine-icd",

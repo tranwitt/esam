@@ -40,11 +40,12 @@ Answer ONLY from the EVIDENCE provided. Rules:
 - If the evidence does not answer the question, say so. Never invent requirements or values."""
 
 DOC_TYPE_NAMES = {"std": "test description (STD)", "icd": "interface control document (ICD)",
-                  "sdd": "software design description (SDD)", "srs": "software requirements specification (SRS)"}
+                  "sdd": "software design description (SDD)", "srs": "software requirements specification (SRS)",
+                  "ssdd": "system/subsystem design description (SSDD)"}
 
 
 # A requirement ID as the ontology defines it (classes.Requirement.id_pattern).
-_REQ_ID = re.compile(r"\bSRS-[A-Z0-9]+-0[1-9]\d\b")
+_REQ_ID = re.compile(r"\b(?:(?:SYS|SW)-)?SRS-[A-Z0-9]+-0[1-9]\d\b")      # SYS-SRS-… system, SW-SRS-… / SRS-… software
 
 
 def message_in_question(question: str, messages: set[str]) -> str | None:
@@ -113,7 +114,7 @@ def retrieve(question: str, emb: Embedder, store: VectorStore, graph: GraphStore
     qvec = emb.embed_query(question)
     hits = store.search(qvec, k=3)
     if not hits:
-        raise LookupError("No chunks found. Run lessons/03_vector_store/ingest.py first.")
+        raise LookupError("No chunks found. Run `python -m crew.main ingest reload` first.")
     top = hits[0]
     log.append(f"1. VECTOR  top hit: {top.chunk.artifact_id} chunk {top.chunk.chunk_index} "
                f"(score {top.score:.3f})")

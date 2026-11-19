@@ -186,7 +186,7 @@ FIGURES = {
                '<div class="tiles" data-ctiles></div><div class="tbl cov"><table data-cmatrix></table></div>'
                '<div class="ctl-label" style="margin-top:18px">Roll-up, walking up the tree</div><div class="rollup" data-rollup></div>',
                "✓ present · ✗ missing · – not required · ⚠ safety-critical. Switch to the fixed checklist to see why rules beat one list for every subsystem; load the STD to watch the Brake ECU gap close."),
-    "7.2": fig("fig-gap", "How ESAM answers “How is SRS-BRK-011 verified?”",
+    "7.2": fig("fig-gap", "How ESAM answers “How is SW-SRS-BRK-011 verified?”",
                '<div class="fig-ctl">' + STD_TOGGLE + '</div><ol class="decide" data-decide></ol>',
                "The gap is detected from the baseline, not guessed by the AI."),
     "8.4": '<p class="seealso">↗ Try these rules interactively in the <a href="#fig-coverage">coverage figure</a> (§5.2).</p>',
@@ -923,7 +923,7 @@ document.addEventListener('click', e => { if (e.target.closest('.std-toggle')) s
     ['Clean', 'Drop TOC, revision history, headers', 'Otherwise the table of contents matches every search.'],
     ['Split', 'Sections, then requirement / test IDs', 'One chunk per requirement or test case is far more useful than an arbitrary slice.'],
     ['Label', 'Prefix the full section path', 'On page 600, “the rate shall be 100 ms” means nothing without its label: <code>SDD-BRK-001 › 3.2 Wheel-slip control › 3.2.4 Pressure modulation</code>'],
-    ['Tag', 'Record IDs a chunk mentions', 'These become links in the graph: <code>verifies: SRS-BRK-012</code> means this test <i>verifies</i> that requirement.']];
+    ['Tag', 'Record IDs a chunk mentions', 'These become links in the graph: <code>verifies: SW-SRS-BRK-012</code> means this test <i>verifies</i> that requirement.']];
   ol.innerHTML = st.map((s, i) => `<li><button aria-pressed="${i === 0}" data-i="${i}">${s[0]}<small>${s[1]}</small></button></li>`).join('');
   const d = $('[data-chev-detail]'); const show = i => { d.innerHTML = `<b>${st[i][0]}.</b> ${st[i][2]}`; $$('button', ol).forEach((b, j) => b.setAttribute('aria-pressed', j === i)); };
   ol.addEventListener('click', e => { const b = e.target.closest('button'); if (b) show(+b.dataset.i); }); show(0);
@@ -1085,13 +1085,13 @@ document.addEventListener('click', e => { if (e.target.closest('.std-toggle')) s
   const ol = $('[data-decide]'); if (!ol) return;
   function render() {
     ol.innerHTML = `
-      <li><span class="dot">?</span><div class="box q">“How is SRS-BRK-011 verified?”</div></li>
+      <li><span class="dot">?</span><div class="box q">“How is SW-SRS-BRK-011 verified?”</div></li>
       <li><span class="dot">1</span><div class="box"><b>Document type:</b> “verified” is a testing word → a test description, <b>STD</b> (ontology §8).</div></li>
-      <li><span class="dot">2</span><div class="box"><b>Subsystem:</b> SRS-BRK-011 is allocated to <code>SUB-BRK-ECU</code>.</div></li>
+      <li><span class="dot">2</span><div class="box"><b>Subsystem:</b> SW-SRS-BRK-011 is allocated to <code>SUB-BRK-ECU</code>.</div></li>
       <li><span class="dot">3</span><div class="box"><b>Baseline check:</b> does SUB-BRK-ECU have an STD? → <b>${std.on ? 'Yes: STD-BRK-001' : 'No'}</b></div></li>
       <li><span class="dot">→</span><div class="branch">
         <div class="br gapb ${std.on ? '' : 'on'}"><h4>Report the gap first</h4><p>“…the Brake ECU test description (STD) for subsystem SUB-BRK-ECU does not exist in the baseline yet… any detailed test sequence or thresholds would be an invention and must not be assumed.”</p></div>
-        <div class="br okb ${std.on ? 'on' : ''}"><h4>Answer, with a citation</h4><p>“The requirement SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … every one of the 200 releases … completes within 15 ms.”</p></div>
+        <div class="br okb ${std.on ? 'on' : ''}"><h4>Answer, with a citation</h4><p>“The requirement SW-SRS-BRK-011 is verified by test case TC-BRK-011 … [STD-BRK-001] … every one of the 200 releases … completes within 15 ms.”</p></div>
       </div></li>`;
   }
   std.subs.push(render); render();
@@ -1100,9 +1100,9 @@ document.addEventListener('click', e => { if (e.target.closest('.std-toggle')) s
 /* §10 traceability */
 (() => {
   const grid = $('[data-tgrid]'); if (!grid) return;
-  const R = { 'Brake ECU|SUB-BRK-ECU · SRS-BRK-001': ['SRS-BRK-010', 'SRS-BRK-011', 'SRS-BRK-012', 'SRS-BRK-020', 'SRS-BRK-021', 'SRS-BRK-022', 'SRS-BRK-030', 'SRS-BRK-031', 'SRS-BRK-032'],
-              'Driver cluster|SUB-DCL · SRS-DCL-001': ['SRS-DCL-010', 'SRS-DCL-011', 'SRS-DCL-020', 'SRS-DCL-021', 'SRS-DCL-022', 'SRS-DCL-030', 'SRS-DCL-031'] };
-  const V = { 'SRS-BRK-010': 'TC-BRK-010', 'SRS-BRK-011': 'TC-BRK-011', 'SRS-BRK-021': 'TC-BRK-021', 'SRS-BRK-030': 'TC-BRK-030' };
+  const R = { 'Brake ECU|SUB-BRK-ECU · SRS-BRK-001': ['SW-SRS-BRK-010', 'SW-SRS-BRK-011', 'SW-SRS-BRK-012', 'SW-SRS-BRK-020', 'SW-SRS-BRK-021', 'SW-SRS-BRK-022', 'SW-SRS-BRK-030', 'SW-SRS-BRK-031', 'SW-SRS-BRK-032'],
+              'Driver cluster|SUB-DCL · SRS-DCL-001': ['SW-SRS-DCL-010', 'SW-SRS-DCL-011', 'SW-SRS-DCL-020', 'SW-SRS-DCL-021', 'SW-SRS-DCL-022', 'SW-SRS-DCL-030', 'SW-SRS-DCL-031'] };
+  const V = { 'SW-SRS-BRK-010': 'TC-BRK-010', 'SW-SRS-BRK-011': 'TC-BRK-011', 'SW-SRS-BRK-021': 'TC-BRK-021', 'SW-SRS-BRK-030': 'TC-BRK-030' };
   const det = $('[data-tdetail]'); let sel = null;
   function render() {
     let tot = 0, ver = 0;

@@ -1,5 +1,9 @@
 """
-Ingest one document file: chunk -> embed -> store, replacing its old chunks.
+Ingest one document file: read -> chunk -> embed -> store, replacing its old chunks.
+
+The file may be markdown, text, Word (.docx, .doc), RTF or a picture: the
+reader (esamkit/readers.py) turns each into markdown first, and describes
+the diagrams in it so their content is searchable (esamkit/diagrams.py).
 
 Lesson 03 runs this over every file in data/documents/; lesson 06 runs it on
 a single newly arrived document. `facts` comes from the baseline
@@ -12,6 +16,7 @@ from pathlib import Path
 from .chunking import chunk_markdown
 from .config import Settings, settings as default_settings
 from .embedders.base import Embedder
+from .readers import read_document
 from .vectorstores import Chunk
 from .vectorstores.base import VectorStore
 
@@ -36,7 +41,7 @@ def make_chunks(text: str, rel: str, facts: dict, s: Settings = default_settings
 def ingest_file(path: Path, rel: str, facts: dict, emb: Embedder, store: VectorStore,
                 s: Settings = default_settings) -> tuple[int, int]:
     """Returns (chunks stored, chunks removed from the previous version)."""
-    chunks = make_chunks(path.read_text(), rel, facts, s)
+    chunks = make_chunks(read_document(path, s, diagrams=True), rel, facts, s)
     # Remove whatever this file had before (it may now have FEWER chunks),
     # then embed and store. Embedding is the slow part.
     removed = store.delete_source(rel)
