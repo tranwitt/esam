@@ -144,11 +144,16 @@ class OpenAICompatEmbedder(Embedder):
         extra = {"dimensions": self._dimensions} if self._dimensions else {}
         try:
             resp = self._sdk.embeddings.create(model=self._model, input=batch, **extra)
+        except EndpointError:
+            raise
         except Exception as e:
+            # The SDK raises its own errors (NotFoundError, RateLimitError, APIConnectionError, and a
+            # ValueError for an empty answer). Callers handle EndpointError, as on the built-in client;
+            # the SDK has already retried the passing kind itself.
             status = getattr(e, "status_code", None)
             if status in (401, 403):
                 raise EndpointError(self._url, status, f"{e} {self._refused()}") from None
-            raise
+            raise EndpointError(self._url, status, f"{type(e).__name__}: {e} [model {self._model!r}]") from None
         return [(getattr(d, "index", n) or 0, list(d.embedding)) for n, d in enumerate(resp.data or [])]
 
     def _embed_http(self, batch: list[str]) -> list[tuple[int, list[float]]]:

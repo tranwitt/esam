@@ -14,6 +14,20 @@ from esamkit.embedders.prefixes import QUERY_PREFIX
 from esamkit.factory import embedder_identity, get_embedder
 from esamkit.llm import EndpointError
 
+try:                                       # the real package, kept before the fixtures hide it
+    import openai as REAL_OPENAI
+except ImportError:
+    REAL_OPENAI = None
+
+
+@pytest.fixture(autouse=True)
+def built_in_client(monkeypatch):
+    """These tests describe the built-in HTTP client, so hide the `openai`
+    package: with it installed (requirements.txt installs it) client="auto"
+    would pick the SDK. Tests that use the `sdk` fixture put a fake one back."""
+    import sys
+    monkeypatch.setitem(sys.modules, "openai", None)
+
 
 def serve_embeddings(endpoint, dim=4, reverse=False):
     def handler(body):
@@ -97,8 +111,8 @@ def test_default_model_folder_follows_the_model_name():
 # ── profiles ─────────────────────────────────────────────────────────────────
 
 def test_local_profile_takes_model_and_url_from_the_environment(monkeypatch):
-    for v in ("ESAM_EMBED_MODEL", "ESAM_EMBED_BASE_URL", "ESAM_EMBED_API_KEY"):
-        monkeypatch.delenv(v, raising=False)
+    for v in ("ESAM_EMBED_MODEL", "ESAM_EMBED_BASE_URL", "ESAM_EMBED_API_KEY", "ESAM_EMBED_MODEL_DIR"):
+        monkeypatch.delenv(v, raising=False)                  # a .env copied from main sets the folder itself
     prof = env.load_profile("local")
     s = env.settings_for(prof)
     assert s.embed_backend == "local" and s.embed_model_id == "BAAI/bge-base-en-v1.5"
@@ -352,3 +366,37 @@ def test_a_401_through_the_sdk_says_what_was_sent(endpoint, sdk):
         OpenAICompatEmbedder(endpoint.url, "sk-abcdefghijklmnopqrstuvwx", "m")
     assert err.value.status == 401 and "Bearer <key from ESAM_EMBED_API_KEY: 27 characters, ends …uvwx>" in str(err.value)
     assert "sk-abcdefghij" not in str(err.value)
+
+
+def test_other_sdk_errors_become_endpoint_errors(endpoint, sdk, monkeypatch):
+    class NotFoundError(Exception):
+        status_code = 404
+
+    def wrong_model(self, **kw):
+        raise NotFoundError("Error code: 404 - model not found")
+
+    def empty_answer(self, **kw):
+        raise ValueError("No embedding data received")             # what the real SDK raises for "data": []
+
+    monkeypatch.setattr(sdk, "create", wrong_model)
+    with pytest.raises(EndpointError, match="model not found") as err:
+        OpenAICompatEmbedder(endpoint.url, "k", "nope")
+    assert err.value.status == 404 and "'nope'" in str(err.value)
+    monkeypatch.setattr(sdk, "create", empty_answer)
+    with pytest.raises(EndpointError, match="No embedding data received") as err:
+        OpenAICompatEmbedder(endpoint.url, "k", "m")
+    assert err.value.status is None
+
+
+@pytest.mark.skipif(REAL_OPENAI is None, reason="the openai package is not installed")
+def test_the_real_sdk_reports_a_wrong_model_and_an_empty_answer_as_endpoint_errors(endpoint, monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "openai", REAL_OPENAI)
+    endpoint.handlers["/embeddings"] = lambda b: (404, {"error": {"message": "model not found"}})
+    with pytest.raises(EndpointError, match="model not found") as err:
+        OpenAICompatEmbedder(endpoint.url, "k", "nope")
+    assert err.value.status == 404 and len(endpoint.calls) == 1   # a wrong model is not tried again
+    endpoint.handlers["/embeddings"] = lambda b: (200, {"data": []})
+    with pytest.raises(EndpointError, match="No embedding data received"):
+        OpenAICompatEmbedder(endpoint.url, "k", "m")
+

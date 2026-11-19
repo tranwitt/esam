@@ -11,7 +11,10 @@ from esamkit.health import health_report
 from esamkit.ontology import load_ontology
 from esamkit.traceability import load_traceability
 
-ALL_CHUNKS = {"ICD-BRK-001": 8, "SDD-BRK-001": 6, "SDD-DCL-001": 6, "SRS-BRK-001": 4, "SRS-DCL-001": 4}
+# What the ingest gives today (python lessons/03_vector_store/ingest.py --reset): every listed
+# document that is on disk must appear here, or the integrity check reports it as not searchable.
+ALL_CHUNKS = {"ICD-BRK-001": 8, "SDD-BRK-001": 6, "SDD-DCL-001": 6, "SRS-BRK-001": 7, "SRS-DCL-001": 6,
+              "SSDD-PWR-001": 6, "SSDD-SUSP-001": 7}
 
 
 @pytest.fixture
