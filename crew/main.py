@@ -29,6 +29,8 @@ ESAM crew runner.
 
     # The graph (derived from the baseline and its documents): rebuild or empty it. No agent, no model.
     python -m crew.main graph status | reload | reset --yes
+    # The vehicle baseline: add a vehicle, family, variant, system, subsystem or function with simple inputs. No agent.
+    python -m crew.main baseline show | check | add <kind> "Name" [--in ID] [--wbs N] ... | remove ID
     # The search store (the embedded chunks of the documents): re-ingest every document, or empty it. No agent.
     python -m crew.main ingest status | reload [--only ID ...] [--fresh] [--with-graph] | reset --yes
 
@@ -65,7 +67,7 @@ sys.path.insert(0, str(ROOT))
 from esamkit.environment import apply_telemetry, inspect, load_profile, resolve  # noqa: E402
 from esamkit.usage import UsageLedger  # noqa: E402
 
-from crew import graph_admin, ingest_admin  # noqa: E402
+from crew import baseline_admin, graph_admin, ingest_admin  # noqa: E402
 from crew.terminal_log import logged  # noqa: E402
 
 RUNS = ROOT / "work" / "runs"
@@ -389,6 +391,11 @@ def cmd_graph(args) -> int:
     return graph_admin.run(args)
 
 
+def cmd_baseline(args) -> int:
+    """Show, check or add to the vehicle baseline (crew/baseline_admin.py). Not a pipeline: no agent, no model."""
+    return baseline_admin.run(args)
+
+
 def cmd_ingest(args) -> int:
     """Reload or reset the search store (crew/ingest_admin.py). Not a pipeline: no agent, no chat model, no run folder."""
     return ingest_admin.run(args)
@@ -634,6 +641,8 @@ def main() -> None:
     b.add_argument("brief")
     g = add("graph", cmd_graph, "the graph: status, reload (rebuild from the baseline), reset (empty it)")
     graph_admin.add_arguments(g)
+    bl = add("baseline", cmd_baseline, "the vehicle baseline: show, check, add (vehicle, system, subsystem, function ...), remove")
+    baseline_admin.add_arguments(bl)
     i = add("ingest", cmd_ingest, "the search store: status, reload (re-ingest the baseline's documents), reset (empty it)")
     ingest_admin.add_arguments(i)
     a = add("ask", cmd_ask, "answer a question with the three agents")

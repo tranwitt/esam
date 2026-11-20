@@ -105,6 +105,13 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   Still quoting older counts: the "28 chunks / 20-vertex graph" lines below and in `HOW_TO_START.md` (they describe
   the database as it was left), lesson 03's sample output and the manual's §2.2 row table. Lessons 05/06 answers
   were not re-run with the two extra documents in the search index.
+- **Baseline editor**: `python -m crew.main baseline show | check | add <vehicle|family|variant|system|subsystem|
+  function> "Name" [--in ID] … | remove ID` (`esamkit/baseline_edit.py`, `crew/baseline_admin.py`,
+  `tests/test_baseline_edit.py`). Text insertion into the YAML (comments kept), validated before writing.
+  The baseline may now hold more vehicles under a top-level `vehicles:` list (`baseline.vehicle_roots`,
+  `ontology._vehicles`, `diagram_baseline.existing_structure`; the Cockpit header counts them). NOT run with a
+  second vehicle: the PostgreSQL graph load, the Cockpit page in a browser, coverage / health / hybrid search.
+  Interfaces and documents are not added by this command.
 - **Search-store utility**: `python -m crew.main ingest status | reload [--only ID …] [--fresh] [--with-graph] |
   reset --yes` (`crew/ingest_admin.py`, `tests/test_ingest_admin.py` with an in-memory store and embedder). New
   store helpers `sources()`, `collection_model()`, `drop_collection()` in `vectorstores/pgvector_store.py`. NOT run

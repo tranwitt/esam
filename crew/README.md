@@ -30,6 +30,9 @@ python -m crew.main graph status                    # is the graph in step with 
 python -m crew.main graph reload                    # rebuild the graph from the baseline and its documents
 python -m crew.main graph reset --yes               # empty the graph
 
+python -m crew.main baseline show                   # the vehicle tree: ids, names, WBS codes, documents
+python -m crew.main baseline add system "Fire Control" --wbs 9      # add to the baseline without editing YAML
+
 python -m crew.main ingest status                   # is the search store in step with the baseline's documents?
 python -m crew.main ingest reload                   # read, chunk, embed and store every listed document again
 python -m crew.main ingest reload --with-graph      # ... and rebuild the graph afterwards
@@ -140,6 +143,55 @@ Use `reload` after editing the baseline by hand, after a `git checkout`, after r
 health check 5 says "reload the graph". None of the three touches the baseline, the documents or the search
 store. All take `--env <profile>`; `python -m crew.graph_admin …` is the same without the crew's other
 dependencies.
+
+## The vehicle baseline: show, check, add, remove
+
+`crew/baseline_admin.py` adds to `data/baseline/vehicle_decomposition.yaml` from simple inputs: a name, and
+where it goes. No agent and no model; the work is in `esamkit/baseline_edit.py`.
+
+```bash
+python -m crew.main baseline show
+python -m crew.main baseline add system "Fire Control" --wbs 9
+python -m crew.main baseline add subsystem "Turret Drive Controller (TDC)" --in SYS-FC --safety-critical yes --os rtos --alias "turret ECU"
+python -m crew.main baseline add function "Turret slew control" --in SUB-TDC --description "Drives the turret to the commanded bearing."
+python -m crew.main baseline add vehicle "SYNTH-MTV Medium Tactical Vehicle"
+python -m crew.main baseline add variant "Ambulance" --in FAM-001
+python -m crew.main baseline remove FN-TDC-TSC
+python -m crew.main baseline check
+```
+
+| You add | It goes in (`--in`) | Worked out when left out | Options |
+|---|---|---|---|
+| `vehicle` | nothing (the top) | id `V-002`, WBS root `2.0`; a family `FAM-002` and a lead variant `VAR-002` come with it | `--family-name`, `--variant-name`, `--bare` (the vehicle alone), `--wbs` |
+| `family` | a vehicle | id `FAM-00n`, the next WBS code under the vehicle | `--wbs` |
+| `variant` | a family | id `VAR-00n`, next WBS code, role `lead` for a family's first variant and `derivative` after | `--role`, `--wbs` |
+| `system` | a variant | id from the name (`SYS-FC`), next WBS code under the variant, `universality: universal` | `--wbs`, `--universality` |
+| `subsystem` | a system | id from the name (`SUB-TDC`; an acronym in brackets is used as it is) | `--safety-critical yes\|no` (**required**), `--alias` (repeatable), `--os`, `--safety-classification`, `--j1939-address` |
+| `function` | a subsystem | id from the subsystem's code and the name (`FN-TDC-TSC`) | `--description`, `--safety-classification` |
+
+For all of them: `--in` may be left out when only one entry could be meant (one variant, say), otherwise the
+command lists the choices; `--id` gives the id yourself; `--set key=value` sets any other attribute the ontology
+has for that kind of entry; `--dry-run` shows the lines and writes nothing; `--reload-graph` rebuilds the graph
+afterwards.
+
+- **The file stays yours.** The entry is written as text at the end of the list it belongs to, in the form an SE
+  would type. No other line moves and every comment stays, so `git diff` shows exactly the addition.
+- **Checked before it is written.** The result must be valid YAML, the entry must sit where it was meant to, the
+  ontology check must find no new error (id form, duplicate id, WBS nesting, allowed values) and the baseline
+  must load. Otherwise nothing is written and the reason is printed.
+- **WBS codes.** `--wbs 9` under variant `1.1.1` gives `1.1.1.9`; a whole code is taken as written. Left out, the
+  next free number is used and the command says so: MIL-STD-881F Appendix G fixes the numbers of the standard
+  systems, so check it. Subsystems and functions have no WBS code of their own.
+- **More than one vehicle.** The first vehicle stays under `vehicle:`; others are listed under `vehicles:`,
+  written the same way. Each needs its own WBS root (`2.0`, `3.0`, …) because documents and coverage are found
+  by WBS code; two vehicles with one root is an ontology error.
+- **`remove`** takes out an entry only when nothing is under it, no document is attached to it and no interface
+  uses it. Documents leave through the intake pipeline's undo, not here.
+- **The graph and the search store are not touched.** Run `python -m crew.main graph reload` (or add
+  `--reload-graph`). A new subsystem then shows in the coverage report with the documents it still needs.
+
+Interfaces and documents are not added here: interfaces are still typed into the YAML, documents arrive through
+`review` / `approve`.
 
 ## The search store: status, reload, reset
 

@@ -82,6 +82,36 @@ _SUB_FIELDS = ("safety_critical", "safety_classification", "os_class", "aliases"
                "j1939_source_address", "tsn_profile", "repo_url", "jira_component", "status", "derived_from")
 
 
+def _systems(var: dict, add) -> None:
+    for sysm in var.get("systems") or []:
+        # A candidate system (read from a diagram, awaiting an SE) may not have its WBS code yet.
+        add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm.get("wbs_code", ""),
+                       "universality": sysm.get("universality", "universal"),
+                       **{k: sysm[k] for k in ("status", "derived_from") if k in sysm}}, var["id"])
+        for sub in sysm.get("subsystems") or []:
+            # No invented WBS code for subsystems (the old script made up
+            # "<system>.sub"). A subsystem's WBS code is its System's,
+            # reachable by one PART_OF hop.
+            props = {"id": sub["id"], "name": sub["name"],
+                     "safety_critical": bool(sub.get("safety_critical", False))}
+            props.update({k: sub[k] for k in _SUB_FIELDS if k in sub})
+            add("Subsystem", props, sysm["id"])
+            for fn in sub.get("functions") or []:
+                fprops = {"id": fn["id"], "name": fn["name"],
+                          "description": fn.get("description", "")}
+                if "safety_classification" in fn:
+                    fprops["safety_classification"] = fn["safety_classification"]
+                add("Function", fprops, sub["id"])
+
+
+def vehicle_roots(data: dict) -> list[dict]:
+    """The vehicles of a baseline: the one under `vehicle:` and, when the
+    programme has more, those listed under `vehicles:` (each written the
+    same way). `python -m crew.main baseline add vehicle` adds to that list."""
+    first = data.get("vehicle")
+    return ([first] if first else []) + list(data.get("vehicles") or [])
+
+
 def load_baseline(path: Path) -> Baseline:
     data = yaml.safe_load(Path(path).read_text())
     vertices: list[Vertex] = []
@@ -92,33 +122,16 @@ def load_baseline(path: Path) -> Baseline:
         if parent_eid:
             edges.append(Edge(props["id"], parent_eid, "PART_OF"))
 
-    veh = data["vehicle"]
-    add("Vehicle", {"id": veh["id"], "name": veh["name"], "wbs_code": veh.get("wbs_code", "1.0"),
-                    "programme": data.get("metadata", {}).get("programme", "")})
-    for fam in veh.get("families", []):
-        add("VehicleFamily", {"id": fam["id"], "name": fam["name"], "wbs_code": fam["wbs_code"]}, veh["id"])
-        for var in fam.get("variants", []):
-            add("Variant", {"id": var["id"], "name": var["name"], "wbs_code": var["wbs_code"],
-                            "role": var.get("role", "variant")}, fam["id"])
-            for sysm in var.get("systems", []):
-                # A candidate system (read from a diagram, awaiting an SE) may not have its WBS code yet.
-                add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm.get("wbs_code", ""),
-                               "universality": sysm.get("universality", "universal"),
-                               **{k: sysm[k] for k in ("status", "derived_from") if k in sysm}}, var["id"])
-                for sub in sysm.get("subsystems", []):
-                    # No invented WBS code for subsystems (the old script made up
-                    # "<system>.sub"). A subsystem's WBS code is its System's,
-                    # reachable by one PART_OF hop.
-                    props = {"id": sub["id"], "name": sub["name"],
-                             "safety_critical": bool(sub.get("safety_critical", False))}
-                    props.update({k: sub[k] for k in _SUB_FIELDS if k in sub})
-                    add("Subsystem", props, sysm["id"])
-                    for fn in sub.get("functions", []):
-                        fprops = {"id": fn["id"], "name": fn["name"],
-                                  "description": fn.get("description", "")}
-                        if "safety_classification" in fn:
-                            fprops["safety_classification"] = fn["safety_classification"]
-                        add("Function", fprops, sub["id"])
+    data["vehicle"]                                     # a baseline without a vehicle is not one
+    for veh in vehicle_roots(data):
+        add("Vehicle", {"id": veh["id"], "name": veh["name"], "wbs_code": veh.get("wbs_code", "1.0"),
+                        "programme": data.get("metadata", {}).get("programme", "")})
+        for fam in veh.get("families") or []:
+            add("VehicleFamily", {"id": fam["id"], "name": fam["name"], "wbs_code": fam["wbs_code"]}, veh["id"])
+            for var in fam.get("variants") or []:
+                add("Variant", {"id": var["id"], "name": var["name"], "wbs_code": var["wbs_code"],
+                                "role": var.get("role", "variant")}, fam["id"])
+                _systems(var, add)
 
     for iface in data.get("interfaces", []):
         edges.append(Edge(iface["from"], iface["to"], "INTERFACES_WITH", {

@@ -56,6 +56,7 @@ from pathlib import Path
 import yaml
 
 from . import diagrams as _diagrams, llm
+from .baseline import vehicle_roots
 from .config import Settings, settings as default_settings
 from .docmodel import Picture
 from .ontology import Ontology, check_baseline, default_ontology
@@ -120,7 +121,7 @@ def mode_of(s: Settings = default_settings, override: str | None = None) -> str:
 def existing_structure(data: dict) -> dict:
     """{"variant": id of the variant new systems go under, "systems": {id: {...}}, "subsystems": {id: {...}}}"""
     systems, subsystems, variants = {}, {}, []
-    for fam in (data.get("vehicle") or {}).get("families") or []:
+    for fam in [f for veh in vehicle_roots(data) for f in veh.get("families") or []]:
         for var in fam.get("variants") or []:
             variants.append(var)
             for sysm in var.get("systems") or []:

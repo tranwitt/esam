@@ -1292,7 +1292,10 @@ $("#tab-tasks").addEventListener("click", () => { showTab("tasks"); refreshTasks
 function render(data) {
   M = buildModel(data); netPos = null;
   const veh = [...M.byId.values()].find((v) => v.label === "Vehicle");
-  $("#programme").textContent = veh ? `${veh.props.name} · WBS ${veh.props.wbs_code || "—"}` : "Vehicle baseline";
+  const vehicles = [...M.byId.values()].filter((v) => v.label === "Vehicle").length;
+  $("#programme").textContent = !veh ? "Vehicle baseline"
+    : vehicles > 1 ? `${veh.props.name} and ${vehicles - 1} more vehicle${vehicles > 2 ? "s" : ""}`
+    : `${veh.props.name} · WBS ${veh.props.wbs_code || "—"}`;
   const when = new Date(data.generated_at);
   const stamp = isNaN(when) ? data.generated_at : when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
   const snap = data.source === "snapshot";

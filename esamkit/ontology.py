@@ -28,6 +28,14 @@ from .config import settings
 _CHILDREN = {"Vehicle": ("families", "VehicleFamily"), "VehicleFamily": ("variants", "Variant"),
              "Variant": ("systems", "System"), "System": ("subsystems", "Subsystem"),
              "Subsystem": ("functions", "Function")}
+
+
+def _vehicles(data: dict) -> list[dict]:
+    """`vehicle:` and, when there are more, the entries of `vehicles:` (see esamkit/baseline.py)."""
+    first = data.get("vehicle")
+    return ([first] if first else []) + list(data.get("vehicles") or [])
+
+
 _WBS = re.compile(r"^\d+(\.\d+[a-z]?)*$")
 
 
@@ -298,14 +306,24 @@ def find_node(data: dict, eid: str | None) -> tuple[str, dict] | None:
             if found := walk(child, c):
                 return found
         return None
-    return walk("Vehicle", data.get("vehicle") or {}) if eid else None
+    if eid:
+        for veh in _vehicles(data):
+            if found := walk("Vehicle", veh):
+                return found
+    return None
 
 
 def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None) -> list[Finding]:
     """Check raw baseline YAML against the ontology. With `documents_dir`,
     also check that every listed document file exists and every file is listed."""
     seen: dict[str, str] = {}
-    out = _check_node(onto, "Vehicle", data.get("vehicle", {}), None, seen)
+    out = []
+    for veh in _vehicles(data) or [{}]:
+        out += _check_node(onto, "Vehicle", veh, None, seen)
+    roots = [str(v.get("wbs_code")) for v in _vehicles(data) if v.get("wbs_code")]
+    for code in sorted({c for c in roots if roots.count(c) > 1}):
+        out.append(Finding("error", f"WBS {code}", "two vehicles have this WBS code: documents and coverage are found by "
+                                                    "WBS code, so each vehicle needs its own (1.0, 2.0, ...)"))
 
     # Interfaces
     rel = onto.relationships["INTERFACES_WITH"]
