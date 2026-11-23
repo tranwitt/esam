@@ -31,7 +31,7 @@ python -m crew.main graph reload                    # rebuild the graph from the
 python -m crew.main graph reset --yes               # empty the graph
 
 python -m crew.main baseline show                   # the vehicle tree: ids, names, WBS codes, documents
-python -m crew.main baseline add system "Fire Control" --wbs 9      # add to the baseline without editing YAML
+python -m crew.main baseline add system "Fire Control"      # add to the baseline without editing YAML
 
 python -m crew.main ingest status                   # is the search store in step with the baseline's documents?
 python -m crew.main ingest reload                   # read, chunk, embed and store every listed document again
@@ -144,14 +144,15 @@ health check 5 says "reload the graph". None of the three touches the baseline, 
 store. All take `--env <profile>`; `python -m crew.graph_admin …` is the same without the crew's other
 dependencies.
 
-## The vehicle baseline: show, check, add, remove
+## The vehicle baseline: show, check, standard, add, remove
 
 `crew/baseline_admin.py` adds to `data/baseline/vehicle_decomposition.yaml` from simple inputs: a name, and
 where it goes. No agent and no model; the work is in `esamkit/baseline_edit.py`.
 
 ```bash
 python -m crew.main baseline show
-python -m crew.main baseline add system "Fire Control" --wbs 9
+python -m crew.main baseline standard
+python -m crew.main baseline add system "Fire Control"
 python -m crew.main baseline add subsystem "Turret Drive Controller (TDC)" --in SYS-FC --safety-critical yes --os rtos --alias "turret ECU"
 python -m crew.main baseline add function "Turret slew control" --in SUB-TDC --description "Drives the turret to the commanded bearing."
 python -m crew.main baseline add vehicle "SYNTH-MTV Medium Tactical Vehicle"
@@ -162,10 +163,10 @@ python -m crew.main baseline check
 
 | You add | It goes in (`--in`) | Worked out when left out | Options |
 |---|---|---|---|
-| `vehicle` | nothing (the top) | id `V-002`, WBS root `2.0`; a family `FAM-002` and a lead variant `VAR-002` come with it | `--family-name`, `--variant-name`, `--bare` (the vehicle alone), `--wbs` |
-| `family` | a vehicle | id `FAM-00n`, the next WBS code under the vehicle | `--wbs` |
-| `variant` | a family | id `VAR-00n`, next WBS code, role `lead` for a family's first variant and `derivative` after | `--role`, `--wbs` |
-| `system` | a variant | id from the name (`SYS-FC`), next WBS code under the variant, `universality: universal` | `--wbs`, `--universality` |
+| `vehicle` | nothing (the top) | id `V-002`, WBS `1.0`; its family `FAM-002` (`1.1`) and lead variant `VAR-002` (`1.1.1`) come with it | `--family-name`, `--variant-name`, `--bare` (the vehicle alone) |
+| `family` | a vehicle | id `FAM-00n`; WBS `1.1` (Family of Vehicles), then `1.2` (Secondary Vehicle) | `--wbs` |
+| `variant` | a family | id `VAR-00n`; WBS `1.1.1` and role `lead` for the first, `1.1.2`, `1.1.3` … and `derivative` after | `--role`, `--wbs` |
+| `system` | a variant | id from the name (`SYS-FC`); the WBS number the standard gives that name, `universality: universal` | `--wbs`, `--universality` |
 | `subsystem` | a system | id from the name (`SUB-TDC`; an acronym in brackets is used as it is) | `--safety-critical yes\|no` (**required**), `--alias` (repeatable), `--os`, `--safety-classification`, `--j1939-address` |
 | `function` | a subsystem | id from the subsystem's code and the name (`FN-TDC-TSC`) | `--description`, `--safety-classification` |
 
@@ -177,14 +178,37 @@ afterwards.
 - **The file stays yours.** The entry is written as text at the end of the list it belongs to, in the form an SE
   would type. No other line moves and every comment stays, so `git diff` shows exactly the addition.
 - **Checked before it is written.** The result must be valid YAML, the entry must sit where it was meant to, the
-  ontology check must find no new error (id form, duplicate id, WBS nesting, allowed values) and the baseline
-  must load. Otherwise nothing is written and the reason is printed.
-- **WBS codes.** `--wbs 9` under variant `1.1.1` gives `1.1.1.9`; a whole code is taken as written. Left out, the
-  next free number is used and the command says so: MIL-STD-881F Appendix G fixes the numbers of the standard
-  systems, so check it. Subsystems and functions have no WBS code of their own.
+  ontology check must find no new error (id form, duplicate id, WBS nesting, allowed values), the WBS code must
+  follow the standard, and the baseline must load. Otherwise nothing is written and the reason is printed.
+- **WBS codes follow MIL-STD-881F Appendix G** (the G.3 table, held in the ontology as `wbs_standard`;
+  `python -m crew.main baseline standard` prints it):
+
+  | Code | The standard's element | In the baseline |
+  |---|---|---|
+  | `1.0` | Ground Vehicle System | a vehicle: always `1.0` |
+  | `1.1`, `1.2` | Family of Vehicles, Secondary Vehicle | a family. There is no third: `1.3`–`1.13` are the common elements (Systems Engineering, Program Management, Test, Training, Data …), which are not parts of the vehicle |
+  | `1.1.1` | Lead Variant | the family's first variant, role `lead` |
+  | `1.1.2` … | Variant 2…n | the other variants |
+  | `1.1.n.1`–`.14` | Integration/Assembly/Test/Checkout, Hull/Frame/Body/Cab, System Survivability, Turret Assembly, Suspension/Steering, Vehicle Electronics, Power Package/Drive Train, Auxiliary Automotive, Fire Control, Armament, Automatic Ammunition Handling, Navigation and Remote Piloting Systems, Special Equipment, Communications | a system **of that name** (or a part of it: "Hull", "Drive Train", "Turret") |
+  | `1.1.n.15` | Software Release 1…n | a system whose name says software release |
+  | `1.1.n.16` … | Other Subsystems 1…n (Specify) | any system the table does not name: `16`, `17`, … |
+
+  So `add system "Fire Control"` gets `1.1.1.9` and `add system "Recovery Crane"` gets `1.1.1.16`, with a note
+  saying which rule applied. If the standard's number for a name is already taken, the command names the system
+  that has it and suggests adding yours as a subsystem of it. `--wbs` is still accepted (a whole code or its last
+  number) but a code that departs from the table is refused: a number from 1 to 14 under another name, a named
+  element placed at 16 or above, a family at `1.3`, a lead variant that is not `.1`, a number used twice.
+  Subsystems and functions have no WBS code of their own.
+- **`baseline check`** reports the same departures in a baseline typed by hand, as warnings (the baseline still
+  loads). A candidate system read from a diagram that has no code yet is passed over.
+- **Where the standard gives no number**, ESAM does this, and says so when it applies: further "Other
+  Subsystems" are numbered 16, 17, …; a second software release needs `--wbs` (the table writes "1…n"); a
+  Secondary Vehicle (`1.2`) is given variants `1.2.1` … with the same element numbers, because the G.3 table
+  does not break it down (it points to a note at G.4.3, which is not in `docs/reference/`). Equipment Kits
+  (`1.1.3` in the table, after the variants) are not held in the baseline.
 - **More than one vehicle.** The first vehicle stays under `vehicle:`; others are listed under `vehicles:`,
-  written the same way. Each needs its own WBS root (`2.0`, `3.0`, …) because documents and coverage are found
-  by WBS code; two vehicles with one root is an ontology error.
+  written the same way. Each is a ground vehicle system of its own, so each WBS starts at `1.0` and the codes
+  repeat from one vehicle to the next. Ids, not WBS codes, tell their entries apart.
 - **`remove`** takes out an entry only when nothing is under it, no document is attached to it and no interface
   uses it. Documents leave through the intake pipeline's undo, not here.
 - **The graph and the search store are not touched.** Run `python -m crew.main graph reload` (or add

@@ -23,18 +23,32 @@ What you give, and what is worked out when you leave it out:
     id        made from the name in the ontology's form: SYS-FC, SUB-TDC,
               FN-TDC-TSC, V-002, FAM-002, VAR-002. An acronym in brackets in
               the name is used as it is.
-    WBS code  the next free number under the parent ("1.1.1.8"). --wbs takes
-              a whole code or just its last number. For a system, check it
-              against MIL-STD-881F Appendix G: the standard fixes these numbers.
+    WBS code  by MIL-STD-881F Appendix G (the ontology's `wbs_standard`; see
+              `baseline standard`). --wbs takes a whole code or its last number.
     the rest  one option per attribute of the ontology (--safety-critical,
               --alias, --os, --description, --role ...), or --set key=value.
 
+WBS codes follow the standard's table, and a code that departs from it is
+refused:
+
+    vehicle   always 1.0. Every ground vehicle system has its own WBS.
+    family    1.1 Family of Vehicles, then 1.2 Secondary Vehicle. There is no
+              third: 1.3 onwards are the common elements (Systems
+              Engineering, Program Management ...).
+    variant   1.1.1 is the lead variant; 1.1.2, 1.1.3 ... the others.
+    system    the number the table gives its name: "Fire Control" is
+              1.1.1.9, "Hull" 1.1.1.2, a software release 1.1.1.15. A system
+              the table does not name is an "Other Subsystems" element,
+              1.1.1.16 onwards. A number from 1 to 14 can only carry the
+              standard's name for it.
+
 A subsystem must say whether it is safety-critical: that is never guessed.
 
-A new VEHICLE goes under `vehicles:` beside the first one, with a family and
-a lead variant so systems can be added to it straight away (--bare: just the
-vehicle). It gets its own WBS root (2.0, 3.0 ...), because documents and
-coverage are found by WBS code.
+A new VEHICLE goes under `vehicles:` beside the first one, with its family
+(1.1) and lead variant (1.1.1) so systems can be added to it straight away
+(--bare: just the vehicle). It is a ground vehicle system of its own, so its
+WBS starts at 1.0 again and its codes repeat the first vehicle's; ids, not
+WBS codes, tell the two apart.
 
 Before the file is changed the result is checked: it must still be valid
 YAML, the new entry must sit where it was meant to, the ontology check must
@@ -55,7 +69,7 @@ import yaml
 
 from .baseline import load_baseline, vehicle_roots
 from .diagram_baseline import DiagramBaselineError, _block_end, _indent, make_id
-from .ontology import _CHILDREN, Ontology, check_baseline, default_ontology
+from .ontology import _CHILDREN, Ontology, check_baseline, default_ontology, standard_element, wbs_findings
 
 KINDS = {"vehicle": "Vehicle", "family": "VehicleFamily", "variant": "Variant",
          "system": "System", "subsystem": "Subsystem", "function": "Function"}
@@ -149,19 +163,24 @@ def _make_id(cname: str, name: str, parent: dict | None, taken: set[str], onto: 
         raise BaselineEditError(f"{e}; give one with --id") from e
 
 
-def _wbs(cname: str, wbs: str | None, parent: dict | None, tree_nodes: list[dict]) -> str | None:
-    """The WBS code of the new entry, or None for a class that has none."""
+def _wbs(cname: str, name: str, wbs: str | None, parent: dict | None, tree_nodes: list[dict], onto: Ontology,
+         notes: list[str]) -> str | None:
+    """The WBS code of the new entry by the standard's table (the ontology's
+    `wbs_standard`), or None for a class that has none. `notes` gets what
+    the user should know about the number chosen."""
     if cname in ("Subsystem", "Function"):
         if wbs:
             raise BaselineEditError(f"a {cname.lower()} has no WBS code of its own (it takes its system's): leave --wbs out")
         return None
+    std = onto.wbs_standard
+    ref = std.get("reference", "the WBS standard")
     wbs = str(wbs).strip() if wbs else None
     if cname == "Vehicle":
-        roots = [str(n["wbs_code"]) for n in tree_nodes if n["class"] == "Vehicle" and n["wbs_code"]]
-        if wbs:
-            return wbs if "." in wbs else f"{wbs}.0"
-        used = [int(m[1]) for r in roots if (m := re.match(r"(\d+)", r))]
-        return f"{max(used, default=0) + 1}.0"
+        root = std.get("vehicle", "1.0")
+        if wbs and wbs not in (root, root.split(".")[0]):
+            raise BaselineEditError(f"a ground vehicle system is WBS {root} in {ref}: every vehicle system has its own WBS, "
+                                    f"so a further vehicle is {root} too. Leave --wbs out")
+        return root
     root = re.sub(r"\.0$", "", str(parent["wbs_code"] or ""))
     if not root:
         if wbs and "." in wbs:
@@ -169,9 +188,50 @@ def _wbs(cname: str, wbs: str | None, parent: dict | None, tree_nodes: list[dict
         raise BaselineEditError(f"{parent['id']} has no WBS code yet, so one can't be worked out: give the whole code with --wbs")
     if wbs:
         return wbs if "." in wbs else f"{root}.{wbs}"
-    used = [int(m[1]) for n in tree_nodes if n["parent"] == parent["id"] and n["wbs_code"]
-            and (m := re.fullmatch(rf"{re.escape(root)}\.(\d+)[a-z]?", str(n["wbs_code"])))]
-    return f"{root}.{max(used, default=0) + 1}"
+    siblings = {int(m[1]): n for n in tree_nodes if n["parent"] == parent["id"] and n["wbs_code"]
+                and (m := re.fullmatch(rf"{re.escape(root)}\.(\d+)", str(n["wbs_code"])))}
+    if not std:                                           # no table in the ontology: the next free number
+        return f"{root}.{max(siblings, default=0) + 1}"
+
+    if cname == "VehicleFamily":
+        elements = std["vehicle_elements"]
+        free = [n for n in elements if n not in siblings]
+        if not free:
+            raise BaselineEditError(
+                f"{parent['id']} already has " + " and ".join(f"{root}.{n} ({siblings[n]['id']})" for n in elements)
+                + f". {ref} has no further vehicle element: {root}.{std.get('first_common_element', 3)} onwards are the common "
+                  "elements (Systems Engineering, Program Management, ...). A further vehicle system is its own WBS: "
+                  "add vehicle \"...\"")
+        if elements[free[0]] != elements[min(elements)]:
+            notes.append(f"WBS {root}.{free[0]} is the standard's {elements[free[0]]!r} element ({root}.{min(elements)} "
+                         f"{elements[min(elements)]} is {siblings[min(elements)]['id']})")
+        return f"{root}.{free[0]}"
+
+    if cname == "Variant":
+        lead = std.get("lead_variant", 1)
+        if lead not in siblings:
+            return f"{root}.{lead}"
+        return f"{root}.{next(n for n in range(lead + 1, 1000) if n not in siblings)}"
+
+    # a system: the number the table gives its name, else an "Other Subsystems" element
+    number = standard_element(onto, name)
+    if number is not None and number in siblings:
+        other = siblings[number]
+        hint = (" The standard writes 'Software Release 1...n' and gives further releases no number: give one with --wbs "
+                f"({std['other_from']} or above)." if number == std.get("software_release") else
+                f" Add what you have in mind as a subsystem of {other['id']}, or give it a name of its own.")
+        raise BaselineEditError(f"{parent['id']} already has WBS {root}.{number} ({other['id']}, {other['name']}), which is "
+                                f"where {ref} puts {name!r}.{hint}")
+    if number is not None:
+        element = std["variant_elements"].get(number)
+        if element and " ".join(name.lower().split()) != element.lower():
+            notes.append(f"WBS {root}.{number} is {element!r} in {ref}")
+        return f"{root}.{number}"
+    number = next(n for n in range(std["other_from"], 1000) if n not in siblings)
+    notes.append(f"{name!r} is not one of the elements {ref} names, so it is an 'Other Subsystems' element: WBS {root}.{number} "
+                 f"({root}.{std['other_from']} onwards). If it belongs to a standard element, add it as a subsystem of that "
+                 "system instead: python -m crew.main baseline standard")
+    return f"{root}.{number}"
 
 
 def _yes_no(value) -> bool:
@@ -277,7 +337,7 @@ def _insert(lines: list[str], entry: dict, parent: dict | None, data: dict) -> l
         else:
             start, _ = _locate(lines, data["vehicle"]["id"], data)
             at = _block_end(lines, start)
-            new = ["", "# More vehicles of the programme, each written like `vehicle:` above.", "vehicles:"] + _entry(entry, 2)
+            new = ["", "# Further ground vehicle systems, written like `vehicle:` above. Each has its own WBS, from 1.0.", "vehicles:"] + _entry(entry, 2)
         lines[at:at] = new
         return new
     key = PARENT[entry["class"]][1]
@@ -319,9 +379,13 @@ def _commit(path: Path, before: str, after: str, onto: Ontology, dry_run: bool, 
                                     "command does not follow); nothing was written. Add it by hand.")
     if gone and gone in where:
         raise BaselineEditError(f"{gone} could not be taken out cleanly; nothing was written")
-    new = _errors(onto, data) - _errors(onto, yaml.safe_load(before))
+    was = yaml.safe_load(before)
+    new = _errors(onto, data) - _errors(onto, was)
     if new:
         raise BaselineEditError("not written: the ontology check would fail.\n  " + "\n  ".join(sorted(new)))
+    off = {f"{f.where}: {f.message}" for f in wbs_findings(onto, data)} - {f"{f.where}: {f.message}" for f in wbs_findings(onto, was)}
+    if off:
+        raise BaselineEditError("not written: the WBS code would not follow the standard.\n  " + "\n  ".join(sorted(off)))
     if dry_run:
         return
     _write(path, after)
@@ -373,13 +437,12 @@ def add(kind: str, name: str, baseline_yaml: Path, onto: Ontology | None = None,
         if not re.match(onto.classes[cname]["id_pattern"], id):
             raise BaselineEditError(f"{id} is not in the form of a {cname} id ({onto.classes[cname]['id_pattern']})")
     eid = id or _make_id(cname, name, par, taken, onto)
-    code = _wbs(cname, wbs, par, tree_nodes)
-    if cname == "System" and not wbs:
-        notes.append(f"WBS {code} is the next free number under {par['id']}; MIL-STD-881F Appendix G fixes the numbers "
-                     "of the standard systems, so check it (and give --wbs if it should be another)")
+    code = _wbs(cname, name, wbs, par, tree_nodes, onto, notes)
     if cname == "Variant" and "role" not in attrs:
+        lead = f"{re.sub(r'[.]0$', '', str(par['wbs_code'] or ''))}.{onto.wbs_standard.get('lead_variant', 1)}"
         siblings = [n for n in tree_nodes if n["parent"] == par["id"]]
-        attrs = {"role": "derivative" if any(n["node"].get("role") == "lead" for n in siblings) else "lead", **attrs}
+        is_lead = code == lead if par["wbs_code"] else not any(n["node"].get("role") == "lead" for n in siblings)
+        attrs = {"role": "lead" if is_lead else "derivative", **attrs}
     if cname == "System" and "universality" not in attrs:
         attrs = {"universality": "universal", **attrs}
 
@@ -388,7 +451,7 @@ def add(kind: str, name: str, baseline_yaml: Path, onto: Ontology | None = None,
     if cname == "Vehicle" and not bare:
         root = re.sub(r"\.0$", "", code)
         fam = {"id": _next_number("FAM", taken), "class": "VehicleFamily", "wbs_code": f"{root}.1", "attributes": {},
-               "name": " ".join((family_name or f"{name} Family").split()), "children": []}
+               "name": " ".join((family_name or f"{name} Family of Vehicles").split()), "children": []}
         var = {"id": _next_number("VAR", taken), "class": "Variant", "wbs_code": f"{root}.1.1", "attributes": {"role": "lead"},
                "name": " ".join((variant_name or "Lead Variant").split()), "children": []}
         fam["children"], entry["children"] = [var], [fam]
@@ -453,3 +516,25 @@ def remove(eid: str, baseline_yaml: Path, onto: Ontology | None = None, dry_run:
     _commit(path, before, "\n".join(lines), onto, dry_run, [], gone=eid)
     return {"id": eid, "class": n["class"], "name": n["name"], "parent": n["parent"], "text": "\n".join(taken_out),
             "baseline": str(path), "written": not dry_run}
+
+
+def standard(onto: Ontology | None = None) -> list[str]:
+    """The standard's table as the ontology holds it, as lines of text."""
+    std = (onto or default_ontology()).wbs_standard
+    if not std:
+        return ["The ontology has no `wbs_standard` section: WBS codes are only checked for nesting."]
+    root = std["vehicle"]
+    top = re.sub(r"\.0$", "", root)
+    fam = f"{top}.{min(std['vehicle_elements'])}"
+    lines = [std.get("reference", ""), "", f"{root:<10} Ground Vehicle System          add vehicle"]
+    lines += [f"{top + '.' + str(n):<10} {name:<30} add family" for n, name in std["vehicle_elements"].items()]
+    lines += [f"{fam}.{std['lead_variant']:<6} Lead Variant                   add variant (the first in a family)",
+              f"{fam}.{std['lead_variant'] + 1}...n  Variant 2...n                  add variant", ""]
+    lines += [f"{fam}.n.{n:<4} {name:<46} add system" for n, name in std["variant_elements"].items()]
+    if std.get("software_release"):
+        lines.append(f"{fam}.n.{std['software_release']:<4} {'Software Release 1...n':<46} add system")
+    lines.append(f"{fam}.n.{std['other_from']:<4} {'Other Subsystems 1...n (Specify)':<46} add system (any other name: "
+                 f"{std['other_from']}, {std['other_from'] + 1}, ...)")
+    lines += ["", f"{top}.{std.get('first_common_element', 3)} onwards (Systems Engineering, Program Management, Test, "
+                  "Training, Data, ...) are common elements, not parts of the vehicle: they are not in the baseline."]
+    return lines

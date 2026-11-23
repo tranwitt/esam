@@ -30,7 +30,7 @@ ESAM crew runner.
     # The graph (derived from the baseline and its documents): rebuild or empty it. No agent, no model.
     python -m crew.main graph status | reload | reset --yes
     # The vehicle baseline: add a vehicle, family, variant, system, subsystem or function with simple inputs. No agent.
-    python -m crew.main baseline show | check | add <kind> "Name" [--in ID] [--wbs N] ... | remove ID
+    python -m crew.main baseline show | check | standard | add <kind> "Name" [--in ID] ... | remove ID
     # The search store (the embedded chunks of the documents): re-ingest every document, or empty it. No agent.
     python -m crew.main ingest status | reload [--only ID ...] [--fresh] [--with-graph] | reset --yes
 

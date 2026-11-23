@@ -2,8 +2,9 @@
 Add to the vehicle baseline from the command line, without editing YAML.
 
     python -m crew.main baseline show                      # the tree: ids, names, WBS codes, documents
-    python -m crew.main baseline check                     # the ontology check of the baseline
-    python -m crew.main baseline add system "Fire Control" --wbs 9
+    python -m crew.main baseline check                     # the ontology check of the baseline, WBS standard included
+    python -m crew.main baseline standard                  # the WBS numbers MIL-STD-881F Appendix G fixes
+    python -m crew.main baseline add system "Fire Control"                 # WBS 1.1.1.9, the standard's number for it
     python -m crew.main baseline add subsystem "Turret Drive Controller (TDC)" --in SYS-FC --safety-critical yes --os rtos
     python -m crew.main baseline add function "Turret slew control" --in SUB-TDC --description "Drives the turret to the commanded bearing."
     python -m crew.main baseline add vehicle "SYNTH-MTV Medium Tactical Vehicle"
@@ -14,7 +15,7 @@ Add to the vehicle baseline from the command line, without editing YAML.
 
   --in ID         the entry it goes in. Left out when there is only one possible.
   --id ID         instead of the id made from the name.
-  --wbs CODE      a whole WBS code, or just its last number. Left out: the next free one.
+  --wbs CODE      a whole WBS code, or just its last number. Left out: the number the standard gives.
   --dry-run       show what would be written, and write nothing.
   --reload-graph  rebuild the graph afterwards (otherwise: python -m crew.main graph reload).
 
@@ -42,15 +43,16 @@ _OPTIONS = {"safety_critical": "safety_critical", "alias": "aliases", "os": "os_
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
-    sub = p.add_subparsers(dest="action", required=True, metavar="show | check | add | remove")
+    sub = p.add_subparsers(dest="action", required=True, metavar="show | check | standard | add | remove")
     sub.add_parser("show", help="the vehicle tree")
     sub.add_parser("check", help="the ontology check of the baseline")
+    sub.add_parser("standard", help="the WBS numbers the standard fixes, as the ontology holds them")
     a = sub.add_parser("add", help="add a vehicle, family, variant, system, subsystem or function")
     a.add_argument("kind", choices=list(be.KINDS))
     a.add_argument("name", help="its name, in quotes")
     a.add_argument("--in", dest="parent", metavar="ID", help="the entry it goes in (left out when only one is possible)")
     a.add_argument("--id", help="instead of the id made from the name")
-    a.add_argument("--wbs", help="vehicle, family, variant, system: a whole WBS code or just its last number")
+    a.add_argument("--wbs", help="family, variant, system: a whole WBS code or its last number, instead of the standard's")
     a.add_argument("--safety-critical", metavar="yes|no", help="subsystem (required): can its failure contribute to a hazard?")
     a.add_argument("--alias", action="append", metavar="NAME", help="subsystem: an everyday name people use (repeatable)")
     a.add_argument("--os", metavar="CLASS", help="subsystem: its operating-system class (rtos, gpos)")
@@ -105,6 +107,10 @@ def run(args, s: Settings | None = None, graph=None) -> int:
     if args.action == "show":
         print(f"Baseline: {path}\n")
         print("\n".join(be.tree(yaml.safe_load(path.read_text()))))
+        return 0
+
+    if args.action == "standard":
+        print("\n".join(be.standard(onto)))
         return 0
 
     if args.action == "check":

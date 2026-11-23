@@ -58,6 +58,14 @@ class Ontology:
         self.document_types: dict = data.get("document_types", {})
         self.rules: dict = data.get("rules", {})
         self.placement: dict = data.get("placement", {})
+        std = dict(data.get("wbs_standard") or {})
+        if std:                                             # YAML keys may come as text
+            std["vehicle_elements"] = {int(k): v for k, v in (std.get("vehicle_elements") or {}).items()}
+            std["variant_elements"] = {int(k): v for k, v in (std.get("variant_elements") or {}).items()}
+            std.setdefault("vehicle", "1.0")
+            std.setdefault("lead_variant", 1)
+            std.setdefault("other_from", max(std["variant_elements"], default=0) + 2)
+        self.wbs_standard: dict = std
 
     def allowed(self, value_set: str) -> set[str]:
         if value_set == "document_types":
@@ -296,6 +304,109 @@ def _one_of(names: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " or " + names[-1]
 
 
+# ── The WBS numbers the standard fixes (the ontology's `wbs_standard`) ───────
+
+def _words(name: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", str(name).lower())
+
+
+def names_element(name: str, element: str) -> bool:
+    """Is `name` a name for the standard's element? Yes when it is the
+    element's name, contains it ("Vehicle Electronics (Vetronics)"), or is
+    made of the parts the standard joins with "/" or "and" ("Hull",
+    "Hull/Frame", "Drive Train", "Navigation")."""
+    have, want = _words(name), _words(element)
+    if not have:
+        return False
+    if any(have[i:i + len(want)] == want for i in range(len(have) - len(want) + 1)):
+        return True
+    if want[-1] == "assembly" and have == want[:-1]:           # "Turret" for "Turret Assembly"
+        return True
+    if "," in element:                                         # a list of activities, not of parts
+        return False
+    parts = [w for w in (_words(p) for p in re.split(r"/|\band\b", element.lower())) if w]
+    mine = [w for w in (_words(p) for p in re.split(r"/|\band\b", str(name).lower())) if w]
+    return all(m in parts for m in mine)                       # "Hull", "Hull/Frame", "Drive Train"
+
+
+def standard_element(onto: "Ontology", name: str) -> int | None:
+    """The number the standard gives a variant's element of this name
+    (5 for "Suspension/Steering", 15 for a software release), or None when
+    the table does not name it (then it is an "Other Subsystems" element)."""
+    std = onto.wbs_standard
+    hits = [n for n, element in std["variant_elements"].items() if names_element(name, element)]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits and std.get("software_release") and "software release" in " ".join(_words(name)):
+        return std["software_release"]
+    return None
+
+
+def wbs_findings(onto: "Ontology", data: dict) -> list[Finding]:
+    """Where the baseline's WBS codes depart from the standard's table: a
+    warning each. Entries without a code yet (candidates) are passed over."""
+    std = onto.wbs_standard
+    if not std:
+        return []
+    ref, out = std.get("reference", "the WBS standard"), []
+    vel, els = std["vehicle_elements"], std["variant_elements"]
+
+    def last(code, parent_code):
+        """The entry's own number when its code is its parent's plus one number, else None."""
+        root = re.sub(r"\.0$", "", str(parent_code))
+        m = re.fullmatch(rf"{re.escape(root)}\.(\d+)", str(code))
+        return int(m[1]) if m else None
+
+    def children(node, key, what):
+        """(child, its number) for the children that have a code; reports codes that are not one level down, and repeats."""
+        seen: dict[str, str] = {}
+        for child in node.get(key) or []:
+            code = child.get("wbs_code")
+            if not code:
+                continue
+            if str(code) in seen:
+                out.append(Finding("warning", child.get("id", "?"), f"WBS {code} is also {seen[str(code)]}'s: each {what} of "
+                                                                     f"{node.get('id')} needs its own number"))
+            seen.setdefault(str(code), child.get("id", "?"))
+            n = last(code, node.get("wbs_code")) if node.get("wbs_code") else None
+            if node.get("wbs_code") and n is None:
+                out.append(Finding("warning", child.get("id", "?"), f"WBS {code} is not one level below {node.get('id')}'s "
+                                                                     f"{node['wbs_code']} ({ref})"))
+            yield child, n
+
+    for veh in _vehicles(data):
+        vid = veh.get("id", "?")
+        if veh.get("wbs_code") and str(veh["wbs_code"]) != std["vehicle"]:
+            out.append(Finding("warning", vid, f"WBS {veh['wbs_code']}: a ground vehicle system is {std['vehicle']} in {ref}. "
+                                               "Each vehicle system has its own WBS, so a second one is 1.0 as well"))
+        for fam, n in children(veh, "families", "family"):
+            if n is not None and n not in vel:
+                what = (f"from {std['vehicle'][:-1]}{std['first_common_element']} on are the common elements (Systems "
+                        "Engineering, Program Management, ...)" if n >= std.get("first_common_element", 3) else "is not in the table")
+                out.append(Finding("warning", fam.get("id", "?"),
+                                   f"WBS {fam['wbs_code']} is not a vehicle element in {ref}: the vehicles are "
+                                   + " and ".join(f"1.{k} {v}" for k, v in vel.items()) + f"; {what}"))
+            for var, vn in children(fam, "variants", "variant"):
+                lead = var.get("role") == "lead"
+                if n == 1 and vn is not None and lead != (vn == std["lead_variant"]):
+                    out.append(Finding("warning", var.get("id", "?"),
+                                       f"WBS {var['wbs_code']} with role {var.get('role', 'derivative')!r}: in {ref} the lead "
+                                       f"variant is {fam['wbs_code']}.{std['lead_variant']} and the other variants follow it"))
+                for sysm, sn in children(var, "systems", "system"):
+                    if sn in els and not names_element(sysm.get("name", ""), els[sn]):
+                        out.append(Finding("warning", sysm.get("id", "?"),
+                                           f"WBS {sysm['wbs_code']} is {els[sn]!r} in {ref}, not {sysm.get('name', '')!r}. A system "
+                                           f"the table does not name is an 'Other Subsystems' element "
+                                           f"({var['wbs_code']}.{std['other_from']} onwards)"))
+                    elif sn is not None and sn not in els and sn != std.get("software_release") and sn < std["other_from"]:
+                        out.append(Finding("warning", sysm.get("id", "?"), f"WBS {sysm['wbs_code']} is not in {ref}"))
+                    elif sn is not None and sn >= std["other_from"] and (hit := standard_element(onto, sysm.get("name", ""))) \
+                            and hit in els:
+                        out.append(Finding("warning", sysm.get("id", "?"),
+                                           f"WBS {sysm['wbs_code']}: {ref} gives {els[hit]!r} the number {var['wbs_code']}.{hit}"))
+    return out
+
+
 def find_node(data: dict, eid: str | None) -> tuple[str, dict] | None:
     """(class, node) of an id in the baseline's vehicle tree."""
     def walk(cname, node):
@@ -320,10 +431,7 @@ def check_baseline(onto: Ontology, data: dict, documents_dir: Path | None = None
     out = []
     for veh in _vehicles(data) or [{}]:
         out += _check_node(onto, "Vehicle", veh, None, seen)
-    roots = [str(v.get("wbs_code")) for v in _vehicles(data) if v.get("wbs_code")]
-    for code in sorted({c for c in roots if roots.count(c) > 1}):
-        out.append(Finding("error", f"WBS {code}", "two vehicles have this WBS code: documents and coverage are found by "
-                                                    "WBS code, so each vehicle needs its own (1.0, 2.0, ...)"))
+    out += wbs_findings(onto, data)
 
     # Interfaces
     rel = onto.relationships["INTERFACES_WITH"]

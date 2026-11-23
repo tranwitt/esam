@@ -24,7 +24,7 @@ SHOWN = {"is_structure_diagram": True, "systems": [
         {"name": "Tire Pressure Monitor", "existing_id": None, "aliases": ["TPMS"], "safety_critical": None,
          "evidence": "box right of the cluster"},
         {"name": "Body Control Module (BCM)", "safety_critical": False}]},
-    {"name": "Fire Suppression", "existing_id": None, "wbs_code": "1.1.1.9",
+    {"name": "Fire Suppression", "existing_id": None, "wbs_code": "1.1.1.16",
      "subsystems": [{"name": "Fire Control Unit", "safety_critical": True}]},
     {"name": "Auxiliary Automotive", "subsystems": [{"name": "Winch Controller"}, {"name": "ABS ECU"}]},
     {"name": "Power Package/Drive Train", "subsystems": [{"name": "brake controller"}]}],
@@ -117,7 +117,7 @@ def test_only_what_the_baseline_lacks_is_proposed(bench):
                                "from": "picture 1 (architecture.png)", "aliases": ["TPMS"], "evidence": "box right of the cluster",
                                "needs": ["safety_critical (written as true until an SE decides)"]}
     assert adds["SUB-BCM"]["safety_critical"] is False and adds["SUB-BCM"]["needs"] == []           # the acronym in the name
-    assert adds["SYS-FS"]["wbs_code"] == "1.1.1.9" and adds["SYS-FS"]["parent"] == "VAR-001" and adds["SUB-FC"]["parent"] == "SYS-FS"
+    assert adds["SYS-FS"]["wbs_code"] == "1.1.1.16" and adds["SYS-FS"]["parent"] == "VAR-001" and adds["SUB-FC"]["parent"] == "SYS-FS"
     assert adds["SYS-AA"]["needs"] == ["wbs_code (the picture shows none)"] and "wbs_code" not in adds["SYS-AA"]
     # matched to what exists by id, by name and by alias: left alone
     assert {x["id"]: x["seen_as"] for x in p["already_present"]} == {
@@ -171,7 +171,7 @@ def test_additions_are_written_as_candidates_where_they_belong(bench, onto):
     assert tpm == {"id": "SUB-TPM", "name": "Tire Pressure Monitor", "safety_critical": True, "aliases": ["TPMS"],
                    "status": "candidate", "derived_from": "SSDD-LTV-002 picture 1 (architecture.png)"}
     assert systems["SYS-VETR"]["subsystems"][3]["safety_critical"] is False
-    assert systems["SYS-FS"]["wbs_code"] == "1.1.1.9" and "wbs_code" not in systems["SYS-AA"]
+    assert systems["SYS-FS"]["wbs_code"] == "1.1.1.16" and "wbs_code" not in systems["SYS-AA"]
     assert "# wbs_code: the diagram shows none" in after and "safety_critical: true       # assumed" in after
     # still a baseline: it loads, and the only finding is the WBS code an SE has to give
     found = [(f.level, f.where, f.message) for f in check_baseline(onto, data)]

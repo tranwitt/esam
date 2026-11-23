@@ -110,8 +110,14 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   `tests/test_baseline_edit.py`). Text insertion into the YAML (comments kept), validated before writing.
   The baseline may now hold more vehicles under a top-level `vehicles:` list (`baseline.vehicle_roots`,
   `ontology._vehicles`, `diagram_baseline.existing_structure`; the Cockpit header counts them). NOT run with a
-  second vehicle: the PostgreSQL graph load, the Cockpit page in a browser, coverage / health / hybrid search.
+  second vehicle: the PostgreSQL graph load, the Cockpit page in a browser, coverage / health / hybrid search
+  (the health roll-up sorts by WBS code, so two vehicles' rows will interleave).
   Interfaces and documents are not added by this command.
+- **WBS codes follow MIL-STD-881F Appendix G**: the G.3 table is in the ontology (`wbs_standard`, v0.13);
+  `ontology.wbs_findings` reports departures as warnings inside `check_baseline`, and `baseline add` numbers new
+  entries by it and refuses a code that departs (vehicle 1.0, family 1.1/1.2, lead variant .1, systems 1-14 by
+  name, 15 software release, 16+ others). Every vehicle is 1.0, so WBS codes repeat across vehicles. The G.4.1-
+  G.4.3 paragraphs (incl. the Secondary Vehicle note) are NOT in `docs/reference/` and could not be fetched.
 - **Search-store utility**: `python -m crew.main ingest status | reload [--only ID …] [--fresh] [--with-graph] |
   reset --yes` (`crew/ingest_admin.py`, `tests/test_ingest_admin.py` with an in-memory store and embedder). New
   store helpers `sources()`, `collection_model()`, `drop_collection()` in `vectorstores/pgvector_store.py`. NOT run
