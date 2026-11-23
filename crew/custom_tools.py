@@ -156,14 +156,21 @@ class OntologyLookupTool(WorkbenchTool):
 
 
 class QueryInput(BaseModel):
-    query: str = Field(..., description="What to look for, in plain words")
+    query: str = Field(..., description="ONE fact to look for, as a short phrase in the document's own words "
+                                        "(about 3-8 words, e.g. 'seat height of the classroom desk'), not the whole question")
     artifact_id: str = Field("", description="Optional: search inside one document only, e.g. SRS-BRK-001")
 
 
 class SearchDocumentsTool(WorkbenchTool):
     name: str = "search_documents"
-    description: str = ("Semantic search over the ingested documents. Returns the best chunks with their "
-                        "document id, chunk number, score and text. Cite the document id.")
+    description: str = ("Semantic search over the ingested documents: it matches meaning, one passage at a time. "
+                        "Search for one fact per call, in a short phrase; for a question with several parts, make "
+                        "one call per part. A long question matches summaries (abstracts, introductions), not the "
+                        "passage with the figure. An exact number or id matches no better than its topic, so search "
+                        "for what the number measures. It always returns its nearest chunks, even when the answer "
+                        "is not in the documents: read the text, and report the fact as missing if no chunk states "
+                        "it. Returns the best chunks with their document id, chunk number, score and text. Cite the "
+                        "document id.")
     args_schema: type[BaseModel] = QueryInput
 
     def _call(self, query: str, artifact_id: str = "", **_) -> str:
