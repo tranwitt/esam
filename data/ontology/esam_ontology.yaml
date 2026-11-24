@@ -326,6 +326,9 @@ placement:
     verification: { values: verification_method }
     traces_to: { type: ref_list, description: "Parent requirement IDs" }
     level: { values: requirement_level, description: "Optional. Level: system or software; must agree with the requirement's id" }
+  test_case_fields:
+    verifies: { type: ref_list, class: Requirement, required: true }
+    method: { values: verification_method, required: true }
 
 # ── System requirement or software requirement? ──────────────────────────────
 # The ID says it. Both kinds are written in the SRS, and a marker in front
@@ -360,9 +363,6 @@ requirement_classification:
     software: [software, firmware, csci, csc, application, program, code, algorithm, task, routine, function block]
     system: [system, subsystem, vehicle, ecu, ecm, unit, module, controller, cluster, hardware, equipment, assembly,
              device, sensor, actuator, display, backbone, network, harness]
-  test_case_fields:
-    verifies: { type: ref_list, class: Requirement, required: true }
-    method: { values: verification_method, required: true }
 
 # ── What each kind of subsystem must have ────────────────────────────────────
 # A subsystem gets the union of every rule whose `when` matches.

@@ -118,6 +118,14 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   entries by it and refuses a code that departs (vehicle 1.0, family 1.1/1.2, lead variant .1, systems 1-14 by
   name, 15 software release, 16+ others). Every vehicle is 1.0, so WBS codes repeat across vehicles. The G.4.1-
   G.4.3 paragraphs (incl. the Secondary Vehicle note) are NOT in `docs/reference/` and could not be fetched.
+- **Ontology editor**: `python -m crew.main ontology show | check | add | set | remove` for values, attributes,
+  document types, required-document rules and the word lists (`esamkit/ontology_edit.py`, `crew/ontology_admin.py`,
+  `tests/test_ontology_edit.py`). Text edits (comments kept), refused when the ontology's own check or the
+  baseline check would gain an error (`--force` for the latter); bumps `metadata.version`. `baseline.py` now
+  copies every attribute of a system / subsystem / function onto its vertex (`_STRUCTURE`), not a fixed list, so
+  an added attribute reaches the graph. Fixed on the way: `test_case_fields` had slipped under
+  `requirement_classification` when that section was added; it is back under `placement` (no code read it).
+  NOT run: a graph reload or the pipelines with an added document type / attribute against PostgreSQL.
 - **Search-store utility**: `python -m crew.main ingest status | reload [--only ID …] [--fresh] [--with-graph] |
   reset --yes` (`crew/ingest_admin.py`, `tests/test_ingest_admin.py` with an in-memory store and embedder). New
   store helpers `sources()`, `collection_model()`, `drop_collection()` in `vectorstores/pgvector_store.py`. NOT run

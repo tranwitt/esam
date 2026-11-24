@@ -31,6 +31,8 @@ ESAM crew runner.
     python -m crew.main graph status | reload | reset --yes
     # The vehicle baseline: add a vehicle, family, variant, system, subsystem or function with simple inputs. No agent.
     python -m crew.main baseline show | check | standard | add <kind> "Name" [--in ID] ... | remove ID
+    # The ontology: values, attributes, document types, required-document rules, classification words. No agent.
+    python -m crew.main ontology show | check | add <kind> ... | set attribute ... | remove <kind> ...
     # The search store (the embedded chunks of the documents): re-ingest every document, or empty it. No agent.
     python -m crew.main ingest status | reload [--only ID ...] [--fresh] [--with-graph] | reset --yes
 
@@ -67,7 +69,7 @@ sys.path.insert(0, str(ROOT))
 from esamkit.environment import apply_telemetry, inspect, load_profile, resolve  # noqa: E402
 from esamkit.usage import UsageLedger  # noqa: E402
 
-from crew import baseline_admin, graph_admin, ingest_admin  # noqa: E402
+from crew import baseline_admin, graph_admin, ingest_admin, ontology_admin  # noqa: E402
 from crew.terminal_log import logged  # noqa: E402
 
 RUNS = ROOT / "work" / "runs"
@@ -396,6 +398,11 @@ def cmd_baseline(args) -> int:
     return baseline_admin.run(args)
 
 
+def cmd_ontology(args) -> int:
+    """Show, check or change the ontology (crew/ontology_admin.py). Not a pipeline: no agent, no model."""
+    return ontology_admin.run(args)
+
+
 def cmd_ingest(args) -> int:
     """Reload or reset the search store (crew/ingest_admin.py). Not a pipeline: no agent, no chat model, no run folder."""
     return ingest_admin.run(args)
@@ -643,6 +650,8 @@ def main() -> None:
     graph_admin.add_arguments(g)
     bl = add("baseline", cmd_baseline, "the vehicle baseline: show, check, add (vehicle, system, subsystem, function ...), remove")
     baseline_admin.add_arguments(bl)
+    on = add("ontology", cmd_ontology, "the ontology: show, check, add / set / remove (values, attributes, document types, rules, words)")
+    ontology_admin.add_arguments(on)
     i = add("ingest", cmd_ingest, "the search store: status, reload (re-ingest the baseline's documents), reset (empty it)")
     ingest_admin.add_arguments(i)
     a = add("ask", cmd_ask, "answer a question with the three agents")

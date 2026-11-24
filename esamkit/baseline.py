@@ -77,31 +77,31 @@ class Baseline:
         return index
 
 
-# Optional subsystem / function fields copied onto the vertex when present.
-_SUB_FIELDS = ("safety_critical", "safety_classification", "os_class", "aliases",
-               "j1939_source_address", "tsn_profile", "repo_url", "jira_component", "status", "derived_from")
+# The keys of an entry that are its place in the tree, not attributes of it. Every other
+# key is an attribute and is copied onto the vertex, so an attribute added to the ontology
+# (python -m crew.main ontology add attribute ...) reaches the graph without a change here.
+_STRUCTURE = ("id", "name", "families", "variants", "systems", "subsystems", "functions")
+
+
+def _attributes(node: dict) -> dict:
+    return {k: v for k, v in node.items() if k not in _STRUCTURE and not isinstance(v, dict)}
 
 
 def _systems(var: dict, add) -> None:
     for sysm in var.get("systems") or []:
         # A candidate system (read from a diagram, awaiting an SE) may not have its WBS code yet.
-        add("System", {"id": sysm["id"], "name": sysm["name"], "wbs_code": sysm.get("wbs_code", ""),
-                       "universality": sysm.get("universality", "universal"),
-                       **{k: sysm[k] for k in ("status", "derived_from") if k in sysm}}, var["id"])
+        add("System", {"id": sysm["id"], "name": sysm["name"], **_attributes(sysm), "wbs_code": sysm.get("wbs_code", ""),
+                       "universality": sysm.get("universality", "universal")}, var["id"])
         for sub in sysm.get("subsystems") or []:
             # No invented WBS code for subsystems (the old script made up
             # "<system>.sub"). A subsystem's WBS code is its System's,
             # reachable by one PART_OF hop.
-            props = {"id": sub["id"], "name": sub["name"],
+            props = {"id": sub["id"], "name": sub["name"], **_attributes(sub),
                      "safety_critical": bool(sub.get("safety_critical", False))}
-            props.update({k: sub[k] for k in _SUB_FIELDS if k in sub})
             add("Subsystem", props, sysm["id"])
             for fn in sub.get("functions") or []:
-                fprops = {"id": fn["id"], "name": fn["name"],
-                          "description": fn.get("description", "")}
-                if "safety_classification" in fn:
-                    fprops["safety_classification"] = fn["safety_classification"]
-                add("Function", fprops, sub["id"])
+                add("Function", {"id": fn["id"], "name": fn["name"], **_attributes(fn),
+                                 "description": fn.get("description", "")}, sub["id"])
 
 
 def vehicle_roots(data: dict) -> list[dict]:

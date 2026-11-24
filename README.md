@@ -51,6 +51,7 @@ esam/
 │   ├── factory.py            the ONLY place that picks concrete backends
 │   ├── baseline.py           SE YAML baseline -> vertices + edges (no DB code)
 │   ├── baseline_edit.py      add a vehicle, system, subsystem or function to the baseline from simple inputs
+│   ├── ontology_edit.py      change the ontology's values, attributes, document types, rules and word lists
 │   ├── chunking.py           documents -> heading-labelled chunks
 │   ├── chat.py               the chat model for lessons 05/06 (a thin wrapper over llm.py)
 │   ├── llm.py                model endpoints: Chat Completions + Responses API, fallback endpoints
@@ -76,6 +77,7 @@ esam/
 ├── cockpit/                  SE Cockpit (FastAPI + one offline HTML page; snapshot export)
 ├── crew/                     the agents: main.py, crew.py, llm.py (fallback endpoints), custom_tools.py, config/*.yaml;
 │                             baseline_admin.py (`python -m crew.main baseline show | check | add | remove`),
+│                             ontology_admin.py (`python -m crew.main ontology show | check | add | set | remove`),
 │                             graph_admin.py (`python -m crew.main graph status | reload | reset`),
 │                             ingest_admin.py (`python -m crew.main ingest status | reload | reset`)
 ├── config/environments/      environment profiles (local, pilot-il5, full-janusgraph); secrets by name only

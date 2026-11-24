@@ -33,6 +33,9 @@ python -m crew.main graph reset --yes               # empty the graph
 python -m crew.main baseline show                   # the vehicle tree: ids, names, WBS codes, documents
 python -m crew.main baseline add system "Fire Control"      # add to the baseline without editing YAML
 
+python -m crew.main ontology show                   # value sets, classes, document types, rules
+python -m crew.main ontology add attribute Subsystem supplier      # change the ontology without editing YAML
+
 python -m crew.main ingest status                   # is the search store in step with the baseline's documents?
 python -m crew.main ingest reload                   # read, chunk, embed and store every listed document again
 python -m crew.main ingest reload --with-graph      # ... and rebuild the graph afterwards
@@ -216,6 +219,61 @@ afterwards.
 
 Interfaces and documents are not added here: interfaces are still typed into the YAML, documents arrive through
 `review` / `approve`.
+
+## The ontology: show, check, add, set, remove
+
+`crew/ontology_admin.py` changes `data/ontology/esam_ontology.yaml` from the command line. No agent and no
+model; the work is in `esamkit/ontology_edit.py`.
+
+```bash
+python -m crew.main ontology show                # all of it; or: show rules | documents | words | Subsystem | os_class
+python -m crew.main ontology check               # the ontology's own consistency, and the baseline against it
+
+python -m crew.main ontology add value os_class hypervisor "Separation kernel hosting several partitions"
+python -m crew.main ontology add value supplier_tier tier1 "Delivers to the prime" --new-set
+python -m crew.main ontology add attribute Subsystem supplier --description "Who builds it"
+python -m crew.main ontology add attribute Subsystem tier --type enum --values supplier_tier
+python -m crew.main ontology add document-type sss "System/Subsystem Specification" --attaches-to Vehicle System
+python -m crew.main ontology add rule --when software has_interfaces --require icd --why "Interfaced software has an ICD."
+python -m crew.main ontology add word software bootloader
+python -m crew.main ontology add answer icd "can bus" "baud rate"
+python -m crew.main ontology add synonym icd "interface sheet"
+
+python -m crew.main ontology set attribute Subsystem j1939_source_address --max 255
+python -m crew.main ontology set attribute Subsystem os_class --required yes
+
+python -m crew.main ontology remove value os_class hypervisor
+python -m crew.main ontology remove attribute Subsystem supplier
+python -m crew.main ontology remove document-type sss
+python -m crew.main ontology remove rule 4
+python -m crew.main ontology remove word software bootloader
+```
+
+| What | `add` | `set` | `remove` |
+|---|---|---|---|
+| `value` | a value and its meaning in a value set; `--new-set` starts a set | | refused while it is the set's last value or the baseline uses it |
+| `attribute` | on a class: `--type text\|integer\|boolean\|enum\|text_list`, `--values SET`, `--pattern`, `--min`, `--max`, `--required`, `--description` | the same options; only what you give changes, `--required yes\|no`, `--pattern ""` takes the pattern off | refused while baseline entries have it |
+| `document-type` | code and name, `--standard`, `--answers`, `--synonyms`, `--attaches-to`; its code joins the form of a document id (`ICD\|SRS\|…`) | | refused while a document of the type is listed or a rule requires it |
+| `rule` | `--when` (`software`, `has_interfaces`, `safety_critical`), `--require` (document types), `--why` | | by its number in `ontology show rules` |
+| `word` | words that mark the subject of a "shall" as `software` or `system` | | |
+| `answer`, `synonym` | words in a question that point to a document type; other names for it | | |
+
+- **The file stays yours.** Only the line or block concerned is added, rewritten or taken out; every other line
+  and every comment stays, so `git diff` shows exactly the change.
+- **Checked before it is written.** The result must be valid YAML, the change must be where it was meant to be,
+  and the ontology's own check must find nothing new (an unknown value set, a rule for an unknown document type …).
+- **The baseline is checked against the result.** A change that would make the baseline fail (an attribute made
+  required that entries lack, a value removed that entries use) is refused with the entries named. `--force`
+  writes it anyway and lists what now fails, for when the baseline is fixed next.
+- **The version goes up one step** (`0.13` → `0.14`) with each change; `--keep-version` leaves it. `--dry-run`
+  shows the change and writes nothing.
+- **A new attribute is usable at once.** `baseline add subsystem "…" --set supplier=Acme` accepts it, the
+  ontology check validates it, and for systems, subsystems and functions the graph loader copies it onto the
+  vertex at the next `graph reload` (the loader now copies every attribute an entry has, not a fixed list).
+- **A new document type** is recognised by the intake pipeline and the coverage report through the ontology; a
+  rule makes it required. A type ESAM reads requirements or test cases out of (SRS, STD) needs code as well.
+- **Not from here:** classes and relationships (ESAM's code knows the ones there are), the `wbs_standard` table,
+  id forms other than the document id, the `placement` section. Edit those in the file, then `ontology check`.
 
 ## The search store: status, reload, reset
 
