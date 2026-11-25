@@ -429,14 +429,41 @@ class _Reader:
         return " ".join(p for p in parts if p)
 
     def table(self, tbl) -> Table:
+        """Rows of cell text, one entry per grid column.
+
+        Word merges cells two ways, and both would misplace text if a row were
+        read as a plain list of cells:
+          * gridSpan: a cell spanning n columns ("Grade 4" over Female, Male,
+            Total) is followed by n-1 empty entries, so the next cell lands in
+            its own column instead of under the wrong header;
+          * vMerge: a label merged down several rows ("Seat height" beside
+            Match, Mismatch, Above, Below) is repeated in each of them, so every
+            row says what it measures even when a chunk holds only some rows.
+        gridBefore (columns skipped at the start of a row) is honoured too.
+        """
         t = Table()
+        started: dict[int, str] = {}           # grid column -> text of the cell that began a vertical merge
         for tr in self._direct(tbl, "tr"):
-            row = []
+            before_cols = _child(_child(tr, "trPr"), "gridBefore")
+            row = [""] * int(_attr(before_cols, "val", "0") or 0) if before_cols is not None else []
             for tc in self._direct(tr, "tc"):
+                tcpr = _child(tc, "tcPr")
+                span = _child(tcpr, "gridSpan")
+                span = max(int(_attr(span, "val", "1") or 1), 1) if span is not None else 1
+                vmerge = _child(tcpr, "vMerge")
+                col = len(row)
                 before = len(t.pictures)
-                row.append(self._cell_text(tc, t.pictures))
+                text = self._cell_text(tc, t.pictures)
                 for pic in t.pictures[before:]:
-                    pic.cell = (len(t.rows), len(row) - 1)
+                    pic.cell = (len(t.rows), col)
+                if vmerge is None:
+                    started.pop(col, None)
+                elif _attr(vmerge, "val", "continue") == "restart":
+                    started[col] = text
+                else:                           # a continuation: Word stores no text in it
+                    text = text or started.get(col, "")
+                row.append(text)
+                row += [""] * (span - 1)
             t.rows.append(row)
         return t
 

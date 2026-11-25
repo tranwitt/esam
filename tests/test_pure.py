@@ -72,3 +72,50 @@ def test_overlap_does_not_cross_sections():
     chunks = chunk_markdown(text, size=300, overlap=60)
     b = next(c for c in chunks if "› B]" in c)
     assert "alpha" not in b
+
+
+
+# ── tables ──────────────────────────────────────────────────────────────────
+
+def long_table(rows=12):
+    head = "| Desk Dimension |  | Grade 4 |  |  | Grade 5 |  |  |\n|---|---|---|---|---|---|---|---|\n" \
+           "| Desk Dimension |  | Female | Male | Total | Female | Male | Total |\n"
+    body = "\n".join(f"| Dimension {i} | Mismatch | {i} | {i + 1} | {i + 2} | {i + 3} | {i + 4} | {i + 5} |" for i in range(rows))
+    return head + body
+
+
+def test_a_long_table_is_cut_between_rows_and_every_piece_keeps_caption_and_header():
+    text = "# T\n\n## Results\n\nIntro text.\n\n**Table 3.3.** Percentages of mismatch.\n\n" + long_table()
+    chunks = [c for c in chunk_markdown(text, size=400, overlap=60) if "|" in c]
+    assert len(chunks) > 2
+    for i, c in enumerate(chunks):
+        body = c.split("\n", 1)[1]
+        rows = [ln for ln in body.splitlines() if ln.startswith("|")]
+        assert all(r.endswith("|") for r in rows), "a row was cut"
+        assert "…|" not in body and "| …" not in body, "a half row was carried as overlap"
+        assert "| Desk Dimension |  | Female | Male | Total |" in body, "sub-header missing"
+        assert ("**Table 3.3.** Percentages of mismatch." + ("" if i == 0 else " (continued)")) in body
+    every_row = [r for c in chunks for r in c.splitlines() if r.startswith("| Dimension ")]
+    assert len(every_row) == 12 and len(set(every_row)) == 12      # each data row once, none lost
+
+
+def test_a_caption_is_never_a_chunk_on_its_own():
+    text = "# T\n\n## S\n\n" + "words " * 60 + "\n\n**Table 1.** Short.\n\n| a | b |\n|---|---|\n| 1 | 2 |"
+    chunks = chunk_markdown(text, size=400, overlap=60)
+    assert not any(c.rstrip().endswith("**Table 1.** Short.") for c in chunks)
+    assert any("**Table 1.** Short.\n\n| a | b |" in c for c in chunks)
+
+
+def test_text_after_a_table_carries_no_table_row_as_overlap():
+    text = "# T\n\n## S\n\n| a | b |\n|---|---|\n" + "\n".join(f"| row {i} | value {i} |" for i in range(20)) \
+           + "\n\n" + "after " * 80
+    after = [c for c in chunk_markdown(text, size=300, overlap=80) if "after" in c]
+    assert after and not any("| row" in c for c in after)
+
+
+def test_header_rows_stop_at_the_first_row_with_numbers():
+    from esamkit.chunking import _split_table
+    table = "| Item | Value |\n|---|---|\n|  | 5 |\n" + "\n".join(f"| x{i} | {i} |" for i in range(40))
+    pieces = _split_table(table, 120, "")
+    assert all(p.startswith("| Item | Value |\n|---|---|\n|") for p in pieces)
+    assert sum(p.count("|  | 5 |") for p in pieces) == 1             # a data row is never repeated as header

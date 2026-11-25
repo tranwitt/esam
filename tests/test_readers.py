@@ -202,6 +202,30 @@ def test_docx_tracked_changes_and_table_pipes():
     assert to_markdown(parse_docx(wf.make_docx(body))[0]) == "kept inserted\n\n| a\\|b | c |\n|---|---|\n| d |  |\n"
 
 
+def test_docx_merged_cells_keep_their_columns_and_labels():
+    """gridSpan: the next cell stays in its own column. vMerge: a label merged
+    down rows is repeated in each. gridBefore: a row starting late is padded."""
+    def tc(text="", span=0, vmerge=None):
+        pr = (f'<w:gridSpan w:val="{span}"/>' if span else "") + (
+            "<w:vMerge/>" if vmerge == "continue" else f'<w:vMerge w:val="{vmerge}"/>' if vmerge else "")
+        return f"<w:tc><w:tcPr>{pr}</w:tcPr>{wf.p(text)}</w:tc>"
+    rows = [
+        tc("Dimension", vmerge="restart") + tc("Grade 4", span=2) + tc("Grade 5", span=2),
+        tc(vmerge="continue") + tc("F") + tc("M") + tc("F") + tc("M"),
+        tc("Seat height", vmerge="restart") + tc("100") + tc("100") + tc("93") + tc("100"),
+        tc(vmerge="continue") + tc("0") + tc("0") + tc("7") + tc("0"),
+        '<w:trPr><w:gridBefore w:val="1"/></w:trPr>' + tc("1") + tc("2") + tc("3") + tc("4"),
+    ]
+    body = "<w:tbl>" + "".join(f"<w:tr>{r}</w:tr>" for r in rows) + "</w:tbl>"
+    assert to_markdown(parse_docx(wf.make_docx(body))[0]) == (
+        "| Dimension | Grade 4 |  | Grade 5 |  |\n"
+        "|---|---|---|---|---|\n"
+        "| Dimension | F | M | F | M |\n"
+        "| Seat height | 100 | 100 | 93 | 100 |\n"
+        "| Seat height | 0 | 0 | 7 | 0 |\n"
+        "|  | 1 | 2 | 3 | 4 |\n")
+
+
 def test_docx_refuses_other_zips_and_dtds():
     import io
     import zipfile
