@@ -22,7 +22,10 @@ from .vectorstores.base import VectorStore
 
 
 def make_chunks(text: str, rel: str, facts: dict, s: Settings = default_settings) -> list[Chunk]:
-    pieces = chunk_markdown(text, s.chunk_size, s.chunk_overlap)
+    # A document that does not name itself in its text (a Word file with no
+    # Title style, say) is labelled with its baseline title, or its file name.
+    title = facts.get("title") or Path(rel).stem
+    pieces = chunk_markdown(text, s.chunk_size, s.chunk_overlap, title=title)
     return [
         Chunk(
             # Deterministic id: re-ingesting the same file REPLACES its

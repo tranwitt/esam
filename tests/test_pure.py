@@ -3,7 +3,7 @@
 import pytest
 
 from esamkit.baseline import load_baseline
-from esamkit.chunking import chunk_markdown
+from esamkit.chunking import chunk_markdown, has_own_title
 from esamkit.config import settings
 
 
@@ -72,3 +72,64 @@ def test_overlap_does_not_cross_sections():
     chunks = chunk_markdown(text, size=300, overlap=60)
     b = next(c for c in chunks if "› B]" in c)
     assert "alpha" not in b
+
+
+
+# A paper exported from Word with no Title style: the title is bold text, the
+# sections are Heading 1 ('#'), and the subsections Heading 3.
+PAPER = """**High-Performance Microprocessor Design for SHA-3 via FPGA**
+
+Alexander Nickita
+
+# Abstract
+
+Modern computing systems demand both high performance and strong security.
+
+# 2. Main Theory
+
+### 2.1 Microprocessor Design
+
+The Alpha microprocessor family was optimised for high clock frequency.
+
+# 3. Results
+
+Throughput reached 22.94 Gbps."""
+
+
+def labels(chunks):
+    return [c.splitlines()[0] for c in chunks]
+
+
+def test_a_document_without_its_own_title_is_labelled_with_the_supplied_one():
+    assert not has_own_title(PAPER)
+    assert labels(chunk_markdown(PAPER, title="SHA-3 paper")) == [
+        "[SHA-3 paper]",                                     # the title page: was unlabelled
+        "[SHA-3 paper › Abstract]",                          # was "[Abstract]"
+        "[SHA-3 paper › 2. Main Theory › 2.1 Microprocessor Design]",
+        "[SHA-3 paper › 3. Results]",                        # a later '#' is a section, not a new title
+    ]
+
+
+def test_without_a_supplied_title_nothing_changes():
+    assert labels(chunk_markdown(PAPER)) == [
+        "**High-Performance Microprocessor Design for SHA-3 via FPGA**",
+        "[Abstract]", "[2. Main Theory › 2.1 Microprocessor Design]", "[3. Results]"]
+
+
+def test_a_document_that_names_itself_ignores_the_supplied_title():
+    for name in ("SDD-BRK-001.md", "SRS-BRK-001.md", "ICD-BRK-001.md"):
+        text = (settings.documents_dir / name).read_text()
+        assert has_own_title(text)
+        assert chunk_markdown(text, title="something else") == chunk_markdown(text)
+
+
+def test_text_with_no_headings_at_all_is_labelled_with_the_title():
+    chunks = chunk_markdown("plain words " * 80, size=300, overlap=40, title="Notes")
+    assert len(chunks) > 1 and all(c.startswith("[Notes]\n") for c in chunks)
+
+
+def test_make_chunks_uses_the_baseline_title_then_the_file_name():
+    from esamkit.ingest import make_chunks
+    first = lambda facts, rel: make_chunks(PAPER, rel, facts)[1].text.splitlines()[0]
+    assert first({"artifact_id": "P-1", "title": "SHA-3 on FPGA"}, "papers/p1.docx") == "[SHA-3 on FPGA › Abstract]"
+    assert first({"artifact_id": "P-1"}, "papers/sha3_fpga.docx") == "[sha3_fpga › Abstract]"

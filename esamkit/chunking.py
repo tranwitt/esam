@@ -47,25 +47,49 @@ def _split_long(text: str, size: int) -> list[str]:
     return pieces
 
 
-def chunk_markdown(text: str, size: int = 600, overlap: int = 80) -> list[str]:
+def has_own_title(text: str) -> bool:
+    """True when the markdown names its document: its only '#' heading is also
+    its first heading, as in "# SRS-BRK-001 — Brake ECU SRS" followed by '##'
+    sections. A Word file whose sections are Heading 1 has several '#'; one
+    whose title is bold text, not the Title style, has its sections first."""
+    levels = [len(m.group(1)) for line in text.splitlines() if (m := _HEADING.match(line))]
+    return bool(levels) and levels[0] == 1 and levels.count(1) == 1
+
+
+def chunk_markdown(text: str, size: int = 600, overlap: int = 80, title: str | None = None) -> list[str]:
     """Return chunks of at most ~`size` characters, each prefixed with its
     section heading, with ~`overlap` characters repeated between neighbours."""
     # 1. Walk the document, remembering the current heading for each paragraph.
     #    The label is "document title › section", so a chunk from section
     #    "2. Task set" still says WHICH document's task set it is. Without the
     #    title, that chunk's vector knows nothing about "brake ECU".
+    #
+    #    `title` is the document's name from outside the text (the baseline, or
+    #    the file name). It is used only when the text does not name itself
+    #    (see has_own_title): then every '#' is a top-level section, and a label
+    #    reads "title › section › subsection", so a chunk from "Abstract" still
+    #    says WHICH document's abstract it is.
     blocks: list[tuple[str, str]] = []  # (heading, paragraph)
-    title, heading = "", ""
+    supplied = title.strip() if title and not has_own_title(text) else ""
+    title, heading = supplied, supplied
+    top = ""                                  # the current '#' section, with a supplied title
     for para in re.split(r"\n\s*\n", text):
         para = para.strip()
         if not para:
             continue
         m = _HEADING.match(para.splitlines()[0])
         if m:
-            if len(m.group(1)) == 1:          # "# Title" -> document title
-                title = heading = m.group(2).strip()
+            name = m.group(2).strip()
+            if supplied:
+                if len(m.group(1)) == 1:      # "# Abstract" -> a top-level section
+                    top = name
+                    heading = f"{supplied} › {name}"
+                else:                         # "## 2.1 ..." under it
+                    heading = " › ".join(x for x in (supplied, top, name) if x)
+            elif len(m.group(1)) == 1:        # "# Title" -> document title
+                title = heading = name
             else:                             # "## Section" and deeper
-                heading = f"{title} › {m.group(2).strip()}" if title else m.group(2).strip()
+                heading = f"{title} › {name}" if title else name
             rest = "\n".join(para.splitlines()[1:]).strip()
             if not rest:
                 continue
