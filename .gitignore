@@ -16,5 +16,7 @@ var/
 bundle/
 # Personal study notes (private)
 notes/
+# What the baseline and ontology commands remember so a change can be undone (esamkit/edit_history.py)
+.history/
 # Crew work area: inbox, run folders, drafts, usage ledger file
 work/

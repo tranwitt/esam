@@ -22,6 +22,9 @@ Change the ontology from the command line, without editing YAML.
     python -m crew.main ontology remove document-type sss
     python -m crew.main ontology remove rule 4                 # the number `ontology show rules` gives
     python -m crew.main ontology remove word software bootloader
+
+    python -m crew.main ontology undo                          # take the last change back; again for the one before
+    python -m crew.main ontology history                       # the changes that can be undone
     (each takes --env <profile>; `python -m crew.ontology_admin ...` is the same thing)
 
   --dry-run       show the change, write nothing.
@@ -71,7 +74,7 @@ def _attribute_options(p: argparse.ArgumentParser, adding: bool) -> None:
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
-    sub = p.add_subparsers(dest="action", required=True, metavar="show | check | add | set | remove")
+    sub = p.add_subparsers(dest="action", required=True, metavar="show | check | add | set | remove | undo | history")
     s = sub.add_parser("show", help="the ontology, or one part of it")
     s.add_argument("what", nargs="?", help="values, classes, documents, rules, words, a class or a value set")
     sub.add_parser("check", help="the ontology's own consistency, and the baseline against it")
@@ -142,6 +145,10 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
         x.add_argument("--dry-run", action="store_true", help="show the change; write nothing")
         x.add_argument("--force", action="store_true", help="write even though the baseline then fails the ontology check")
         x.add_argument("--keep-version", action="store_true", help="leave metadata.version as it is")
+    u = sub.add_parser("undo", help="take the last change back (again: the one before)")
+    u.add_argument("--dry-run", action="store_true", help="say what would be undone; write nothing")
+    u.add_argument("--force", action="store_true", help="restore the earlier file even if it was edited since, or the baseline then fails")
+    sub.add_parser("history", help="the changes that can be undone, newest first")
 
 
 def _change(args, edit: oe.Edit) -> dict:
@@ -194,6 +201,31 @@ def run(args, s: Settings | None = None) -> int:
               else f"The ontology is consistent and the baseline passes it ({path}).")
         return 1 if errors else 0
 
+    if args.action == "history":
+        found = oe.history(path)
+        print(f"Changes to {path} that can be undone, newest first:" if found else
+              f"No change made by these commands is remembered for {path}.")
+        for n, e in enumerate(found, 1):
+            print(f"  {n:>2}. {e['when']}  {e['change']}")
+        if found:
+            print("Undo the newest: python -m crew.main ontology undo")
+        return 0
+
+    if args.action == "undo":
+        try:
+            res = oe.undo(path, s.baseline_yaml, force=args.force, dry_run=args.dry_run)
+        except oe.OntologyEditError as e:
+            print(f"NOT CHANGED: {e}")
+            return 1
+        print(f"{'Would undo' if args.dry_run else 'Undone'}: {res['change']} (made {res['when']}). "
+              + ("The file would be" if args.dry_run else "The file is") + " as it was before that change."
+              + (" An edit made since was discarded (--force)." if res["edited_since"] and not args.dry_run else ""))
+        for line in res["problems"]:
+            print(f"  now a problem (--force): {line}")
+        print(f"{res['left']} more change(s) can be undone.")
+        print(f"Nothing was written (--dry-run): {path}" if args.dry_run else f"Written to {path}")
+        return 0
+
     try:
         res = _change(args, oe.Edit(path, s.baseline_yaml, dry_run=args.dry_run, force=args.force,
                                     keep_version=args.keep_version))
@@ -209,6 +241,8 @@ def run(args, s: Settings | None = None) -> int:
         print(f"Nothing was written (--dry-run): {path}")
         return 0
     print(f"Written to {path}" + (f" (now version {res['version']})" if res["version"] else ""))
+    if res.get("undo"):
+        print("To take this back: python -m crew.main ontology undo")
     return 0
 
 

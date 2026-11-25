@@ -126,6 +126,11 @@ Branch `feature/word-diagrams-endpoint-failover` (not merged).
   an added attribute reaches the graph. Fixed on the way: `test_case_fields` had slipped under
   `requirement_classification` when that section was added; it is back under `placement` (no code read it).
   NOT run: a graph reload or the pipelines with an added document type / attribute against PostgreSQL.
+- **Undo for both editors**: `baseline undo | history`, `ontology undo | history` (`esamkit/edit_history.py`).
+  Each written change is recorded beside the file in `.history/<file name>/` (git-ignored, last 100: the file
+  before, a SHA-256 of the file after). Undo restores the newest record only if the file still has that hash
+  (else `--force`), and for the ontology only if the baseline gains no finding under the earlier ontology.
+  `tests/test_edit_commands_on_disk.py` runs the real commands in subprocesses and re-reads the files.
 - **Search-store utility**: `python -m crew.main ingest status | reload [--only ID …] [--fresh] [--with-graph] |
   reset --yes` (`crew/ingest_admin.py`, `tests/test_ingest_admin.py` with an in-memory store and embedder). New
   store helpers `sources()`, `collection_model()`, `drop_collection()` in `vectorstores/pgvector_store.py`. NOT run

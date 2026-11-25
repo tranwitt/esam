@@ -147,7 +147,7 @@ health check 5 says "reload the graph". None of the three touches the baseline, 
 store. All take `--env <profile>`; `python -m crew.graph_admin …` is the same without the crew's other
 dependencies.
 
-## The vehicle baseline: show, check, standard, add, remove
+## The vehicle baseline: show, check, standard, add, remove, undo
 
 `crew/baseline_admin.py` adds to `data/baseline/vehicle_decomposition.yaml` from simple inputs: a name, and
 where it goes. No agent and no model; the work is in `esamkit/baseline_edit.py`.
@@ -161,6 +161,8 @@ python -m crew.main baseline add function "Turret slew control" --in SUB-TDC --d
 python -m crew.main baseline add vehicle "SYNTH-MTV Medium Tactical Vehicle"
 python -m crew.main baseline add variant "Ambulance" --in FAM-001
 python -m crew.main baseline remove FN-TDC-TSC
+python -m crew.main baseline undo
+python -m crew.main baseline history
 python -m crew.main baseline check
 ```
 
@@ -214,13 +216,16 @@ afterwards.
   repeat from one vehicle to the next. Ids, not WBS codes, tell their entries apart.
 - **`remove`** takes out an entry only when nothing is under it, no document is attached to it and no interface
   uses it. Documents leave through the intake pipeline's undo, not here.
+- **`undo`** takes the last `add` or `remove` back, putting the file exactly as it was; run it again for the
+  change before. `history` lists what can be undone. It is refused when the file was edited since (`--force`
+  restores the earlier file anyway). `--dry-run` and `--reload-graph` work here too.
 - **The graph and the search store are not touched.** Run `python -m crew.main graph reload` (or add
   `--reload-graph`). A new subsystem then shows in the coverage report with the documents it still needs.
 
 Interfaces and documents are not added here: interfaces are still typed into the YAML, documents arrive through
 `review` / `approve`.
 
-## The ontology: show, check, add, set, remove
+## The ontology: show, check, add, set, remove, undo
 
 `crew/ontology_admin.py` changes `data/ontology/esam_ontology.yaml` from the command line. No agent and no
 model; the work is in `esamkit/ontology_edit.py`.
@@ -247,6 +252,9 @@ python -m crew.main ontology remove attribute Subsystem supplier
 python -m crew.main ontology remove document-type sss
 python -m crew.main ontology remove rule 4
 python -m crew.main ontology remove word software bootloader
+
+python -m crew.main ontology undo
+python -m crew.main ontology history
 ```
 
 | What | `add` | `set` | `remove` |
@@ -267,6 +275,9 @@ python -m crew.main ontology remove word software bootloader
   writes it anyway and lists what now fails, for when the baseline is fixed next.
 - **The version goes up one step** (`0.13` → `0.14`) with each change; `--keep-version` leaves it. `--dry-run`
   shows the change and writes nothing.
+- **`undo`** takes the last change back (the version with it); run it again for the one before. `history` lists
+  what can be undone. It is refused when the file was edited since, or when a baseline entry now uses what the
+  change added; `--force` restores the earlier file anyway.
 - **A new attribute is usable at once.** `baseline add subsystem "…" --set supplier=Acme` accepts it, the
   ontology check validates it, and for systems, subsystems and functions the graph loader copies it onto the
   vertex at the next `graph reload` (the loader now copies every attribute an entry has, not a fixed list).

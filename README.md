@@ -233,6 +233,7 @@ python -m crew.main baseline add system "Fire Control"
 python -m crew.main baseline add subsystem "Turret Drive Controller (TDC)" --in SYS-FC --safety-critical yes
 python -m crew.main baseline add function "Turret slew control" --in SUB-TDC
 python -m crew.main baseline remove FN-TDC-TSC
+python -m crew.main baseline undo                    # take the last change back
 
 # the ontology: values, attributes, document types, required-document rules, word lists
 python -m crew.main ontology show
@@ -240,6 +241,7 @@ python -m crew.main ontology add value os_class hypervisor "Separation kernel ho
 python -m crew.main ontology add attribute Subsystem supplier --description "Who builds it"
 python -m crew.main ontology set attribute Subsystem j1939_source_address --max 255
 python -m crew.main ontology remove value os_class hypervisor
+python -m crew.main ontology undo                    # take the last change back
 ```
 
 **How to tell that the file was changed.** Every command ends by saying what happened to the file, with its
@@ -250,6 +252,7 @@ full path:
 | `Added …` / `Changed: …` / `Removed …`, the lines written, then `Written to <path>` | The file was changed. The lines shown are the ones now in it. |
 | `Would add …` / `Would change: …`, then `Nothing was written (--dry-run): <path>` | You asked for a preview with `--dry-run`. The file is untouched. |
 | `NOT CHANGED: <reason>` | The change was refused, or the file could not be written. The file is untouched, and the command exits with an error. |
+| `Undone: <the change> …`, then `Written to <path>` | The last change was taken back. The file is as it was before it. |
 
 To see it for yourself: `git diff data/` shows exactly the lines added or removed (nothing else in the file
 moves, and every comment stays), and `baseline show` / `ontology show` read the file again.
@@ -262,6 +265,29 @@ moves, and every comment stays), and `baseline show` / `ontology show` read the 
 3. The output does not start with `NOT CHANGED`. A change is refused when the result would not be valid, would
    break a rule (a WBS code against MIL-STD-881F, an id already used, a value the ontology does not allow), or
    would make the baseline fail the ontology check; the reason and what to give instead follow on the same line.
+
+**Undoing a change.** Every change these commands write is remembered, so it can be taken back:
+
+```bash
+python -m crew.main baseline history     # the changes that can be undone, newest first
+python -m crew.main baseline undo        # take the newest back; run it again for the one before
+python -m crew.main ontology history
+python -m crew.main ontology undo
+```
+
+- `undo` puts the file back exactly as it was before that change, whatever the change was (an `add`, a `set` or
+  a `remove`), and for the ontology the version number goes back with it. `undo --dry-run` says what would be
+  undone and writes nothing.
+- Changes are undone newest first, one per `undo`. To take back an older change and keep the newer ones, use the
+  matching `remove` (or `add`) instead.
+- **Your own edits are safe.** If the file was edited after the last command (by hand, by the diagram reader or
+  by the intake pipeline), `undo` is refused, because it would throw that edit away. `undo --force` restores the
+  earlier file all the same.
+- An ontology change that the baseline now depends on is not undone from under it: if you added an attribute and
+  then set it on a subsystem, undo the baseline change first (the refusal names the entries).
+- The record is kept beside each file, in `.history/` (the last 100 changes, not under version control). It
+  covers only what these two commands wrote; for anything else, and for older states, use `git`.
+- After undoing a baseline change, rebuild the graph as below.
 
 **What these commands do not change.** The graph and the search store are built *from* these files and stay as
 they were until rebuilt:

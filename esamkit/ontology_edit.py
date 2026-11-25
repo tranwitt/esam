@@ -39,6 +39,10 @@ ontology (making an attribute required that entries lack, removing a value
 entries use). Otherwise nothing is written and the reason is given; --force
 writes a change that breaks the baseline, for when the baseline is fixed
 next. The version in `metadata` goes up by one step with each change.
+
+`undo` takes the last change back (and the version with it), and again for
+the one before: every change these commands write is remembered
+(esamkit/edit_history.py). `history` lists them.
 """
 
 import json
@@ -48,6 +52,7 @@ from pathlib import Path
 
 import yaml
 
+from . import edit_history
 from .diagram_baseline import _block_end, _indent
 from .ontology import Ontology, check_baseline
 
@@ -187,6 +192,13 @@ def _baseline_errors(onto: Ontology, baseline_yaml: Path | None) -> set[str]:
     return {f"{f.where}: {f.message}" for f in check_baseline(onto, data) if f.level == "error"}
 
 
+def _baseline_findings(onto: Ontology, baseline_yaml: Path | None) -> set[str]:
+    """Errors and warnings alike."""
+    if not baseline_yaml or not Path(baseline_yaml).is_file():
+        return set()
+    return {f"{f.where}: {f.message}" for f in check_baseline(onto, yaml.safe_load(Path(baseline_yaml).read_text()))}
+
+
 def _bump(lines: list[str]) -> str | None:
     at = _find(lines, ["metadata", "version"])
     if at is None:
@@ -222,7 +234,7 @@ def _commit(path: Path, before: str, lines: list[str], expect, baseline_yaml: Pa
         broken = _baseline_errors(onto, baseline_yaml) - _baseline_errors(old, baseline_yaml)
     except Exception as e:
         raise OntologyEditError(f"not written: the baseline could not be checked against the result ({e})") from e
-    result.update(ontology=str(path), written=not dry_run, version=version, baseline_errors=sorted(broken))
+    result.update(ontology=str(path), written=not dry_run, version=version, baseline_errors=sorted(broken), undo=False)
     if broken and not force:
         raise OntologyEditError("not written: the baseline would no longer pass the ontology check.\n  "
                                 + "\n  ".join(sorted(broken))
@@ -238,6 +250,7 @@ def _commit(path: Path, before: str, lines: list[str], expect, baseline_yaml: Pa
                                     "and its folder can be written by this user") from e
         if path.read_text() != after:                    # read back: never report a write that is not on disk
             raise OntologyEditError(f"NOT written: {path} does not hold the change after writing it")
+        result["undo"] = edit_history.record(path, before, after, result["change"]) is not None
     return result
 
 
@@ -684,3 +697,28 @@ def show(onto: Ontology, what: str | None = None) -> list[str]:
         raise OntologyEditError(f"show takes a section ({', '.join(SECTIONS)}), a class ({', '.join(onto.classes)}) or a "
                                 f"value set ({', '.join(onto.value_sets)}), not {what!r}")
     return out
+
+
+def undo(ontology_yaml: Path, baseline_yaml: Path | None = None, force: bool = False, dry_run: bool = False) -> dict:
+    """Put the ontology back as it was before the last change these commands wrote.
+    Refused (OntologyEditError) when the file was edited since, or when the baseline
+    would fail the earlier ontology (an entry uses what the change added); `force` restores it anyway."""
+    path = Path(ontology_yaml)
+
+    def check(text: str) -> list[str]:
+        try:
+            earlier, now = Ontology(yaml.safe_load(text)), Ontology(yaml.safe_load(path.read_text()))
+        except Exception as e:
+            return [f"not a valid ontology ({e})"]
+        # warnings count here too: an entry that has an attribute the earlier ontology does not know is one
+        return sorted((_problems(earlier) - _problems(now))
+                      | (_baseline_findings(earlier, baseline_yaml) - _baseline_findings(now, baseline_yaml)))
+    try:
+        return edit_history.undo(path, force=force, dry_run=dry_run, check=check)
+    except edit_history.HistoryError as e:
+        raise OntologyEditError(str(e)) from e
+
+
+def history(ontology_yaml: Path) -> list[dict]:
+    """The changes that can be undone, newest first: [{"when", "change"}]."""
+    return [{"when": e["when"], "change": e["change"]} for e in edit_history.entries(Path(ontology_yaml))]

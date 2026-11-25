@@ -58,6 +58,10 @@ and the reason is given. The graph is NOT changed: `graph reload` afterwards
 
 `remove` takes out an entry that has nothing under it and nothing pointing
 at it (no children, no documents, no interfaces).
+
+`undo` takes the last change back, whatever it was (an add or a remove), and
+again for the one before: every change these commands write is remembered
+(esamkit/edit_history.py). `history` lists them.
 """
 
 import json
@@ -67,6 +71,7 @@ from pathlib import Path
 
 import yaml
 
+from . import edit_history
 from .baseline import load_baseline, vehicle_roots
 from .diagram_baseline import DiagramBaselineError, _block_end, _indent, make_id
 from .ontology import _CHILDREN, Ontology, check_baseline, default_ontology, standard_element, wbs_findings
@@ -377,8 +382,9 @@ def _write(path: Path, text: str) -> None:
 
 
 def _commit(path: Path, before: str, after: str, onto: Ontology, dry_run: bool, expect: list[tuple[str, str | None]],
-            gone: str | None = None) -> None:
-    """Check `after` and write it. `expect` = [(id, parent id)] that must be there; `gone` = an id that must not."""
+            gone: str | None = None, change: str = "") -> bool:
+    """Check `after` and write it. `expect` = [(id, parent id)] that must be there; `gone` = an id that must not.
+    Returns whether the change can be undone (it is remembered: esamkit/edit_history.py)."""
     try:
         data = yaml.safe_load(after)
     except yaml.YAMLError as e:
@@ -398,13 +404,14 @@ def _commit(path: Path, before: str, after: str, onto: Ontology, dry_run: bool, 
     if off:
         raise BaselineEditError("not written: the WBS code would not follow the standard.\n  " + "\n  ".join(sorted(off)))
     if dry_run:
-        return
+        return False
     _write(path, after)
     try:
         load_baseline(path)
     except Exception as e:
         _write(path, before)
         raise BaselineEditError(f"not written: the baseline would not load ({e})") from e
+    return edit_history.record(path, before, after, change) is not None
 
 
 def add(kind: str, name: str, baseline_yaml: Path, onto: Ontology | None = None, parent: str | None = None,
@@ -483,8 +490,9 @@ def add(kind: str, name: str, baseline_yaml: Path, onto: Ontology | None = None,
     for c in created:
         expect.append((c["id"], up))
         up = c["id"]
-    _commit(path, before, after, onto, dry_run, expect)
-    return {"id": eid, "class": cname, "name": name, "parent": par["id"] if par else None, "wbs_code": code,
+    undoable = _commit(path, before, after, onto, dry_run, expect,
+                       change=f"add {kind} {eid} ({name})" + (f" in {par['id']}" if par else ""))
+    return {"id": eid, "class": cname, "name": name, "parent": par["id"] if par else None, "wbs_code": code, "undo": undoable,
             "attributes": attrs, "text": "\n".join(new), "baseline": str(path), "written": not dry_run, "notes": notes,
             "created": [{"id": c["id"], "class": c["class"], "name": c["name"], "wbs_code": c["wbs_code"]} for c in created]}
 
@@ -533,8 +541,8 @@ def remove(eid: str, baseline_yaml: Path, onto: Ontology | None = None, dry_run:
                 del lines[first:i + 1]
             else:
                 lines[i] = lines[i].split("#")[0].rstrip() + " []"
-    _commit(path, before, "\n".join(lines), onto, dry_run, [], gone=eid)
-    return {"id": eid, "class": n["class"], "name": n["name"], "parent": n["parent"], "text": "\n".join(taken_out),
+    undoable = _commit(path, before, "\n".join(lines), onto, dry_run, [], gone=eid, change=f"remove {eid} ({n['name']})")
+    return {"id": eid, "class": n["class"], "name": n["name"], "parent": n["parent"], "text": "\n".join(taken_out), "undo": undoable,
             "baseline": str(path), "written": not dry_run}
 
 
@@ -558,3 +566,26 @@ def standard(onto: Ontology | None = None) -> list[str]:
     lines += ["", f"{top}.{std.get('first_common_element', 3)} onwards (Systems Engineering, Program Management, Test, "
                   "Training, Data, ...) are common elements, not parts of the vehicle: they are not in the baseline."]
     return lines
+
+
+def undo(baseline_yaml: Path, onto: Ontology | None = None, force: bool = False, dry_run: bool = False) -> dict:
+    """Put the baseline back as it was before the last change `add` or `remove` wrote.
+    Refused (BaselineEditError) when the file was edited since, or when the earlier
+    file would fail the ontology check as the ontology now is; `force` restores it anyway."""
+    onto = onto or default_ontology()
+    path = Path(baseline_yaml)
+
+    def check(text: str) -> list[str]:
+        try:
+            return sorted(_errors(onto, yaml.safe_load(text)) - _errors(onto, yaml.safe_load(path.read_text())))
+        except yaml.YAMLError as e:
+            return [f"not valid YAML ({e})"]
+    try:
+        return edit_history.undo(path, force=force, dry_run=dry_run, check=check)
+    except edit_history.HistoryError as e:
+        raise BaselineEditError(str(e)) from e
+
+
+def history(baseline_yaml: Path) -> list[dict]:
+    """The changes that can be undone, newest first: [{"when", "change"}]."""
+    return [{"when": e["when"], "change": e["change"]} for e in edit_history.entries(Path(baseline_yaml))]

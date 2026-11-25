@@ -178,3 +178,109 @@ def test_a_write_that_fails_is_an_error_and_leaves_the_file(files, monkeypatch):
     with pytest.raises(oe.OntologyEditError, match="NOT written: .*ontology.yaml could not be changed .Permission denied."):
         oe.Edit(onto, base).word("software", ["bootloader"])
     assert (digest(base), digest(onto)) == kept and sorted(x.name for x in base.parent.iterdir()) == ["baseline.yaml", "ontology.yaml"]
+
+
+# ── undo ─────────────────────────────────────────────────────────────────────
+
+def test_baseline_changes_can_be_undone_one_by_one(files):
+    base, _ = files
+    original = base.read_text()
+    assert command(files, "crew.baseline_admin", "undo").returncode == 1                 # nothing yet
+    assert "No change made by these commands is remembered" in command(files, "crew.baseline_admin", "history").stdout
+
+    states = [original]
+    for argv in (("add", "system", "Fire Control"),
+                 ("add", "subsystem", "Turret Drive", "--in", "SYS-FC", "--safety-critical", "yes"),
+                 ("add", "vehicle", "SYNTH-MTV"),
+                 ("remove", "SUB-TD")):
+        got = command(files, "crew.baseline_admin", *argv)
+        assert got.returncode == 0 and "To take this back: python -m crew.main baseline undo" in got.stdout
+        states.append(base.read_text())
+    assert len(set(states)) == 5
+    listed = command(files, "crew.baseline_admin", "history").stdout
+    assert [ln.split("  ", 2)[-1] for ln in listed.splitlines() if ln[:5].strip().rstrip(".").isdigit()] == [
+        "remove SUB-TD (Turret Drive)", "add vehicle V-002 (SYNTH-MTV)", "add subsystem SUB-TD (Turret Drive) in SYS-FC",
+        "add system SYS-FC (Fire Control) in VAR-001"]
+
+    got = command(files, "crew.baseline_admin", "undo", "--dry-run")
+    assert got.returncode == 0 and "Would undo: remove SUB-TD (Turret Drive)" in got.stdout and base.read_text() == states[4]
+
+    # each undo puts the file back to the byte as it was before that change: a remove is undone like an add
+    for step, what in ((3, "remove SUB-TD"), (2, "add vehicle V-002"), (1, "add subsystem SUB-TD"), (0, "add system SYS-FC")):
+        got = command(files, "crew.baseline_admin", "undo")
+        assert got.returncode == 0, got.stdout + got.stderr
+        assert f"Undone: {what}" in got.stdout and f"{step} more change(s) can be undone." in got.stdout
+        assert base.read_text() == states[step]
+    assert base.read_text() == original
+    assert command(files, "crew.baseline_admin", "undo").returncode == 1
+    assert command(files, "crew.baseline_admin", "check").returncode == 0
+
+
+def test_undo_does_not_throw_away_an_edit_made_since(files):
+    base, _ = files
+    original = base.read_text()
+    command(files, "crew.baseline_admin", "add", "system", "Fire Control")
+    edited = base.read_text().replace('name: "Fire Control"', 'name: "Fire Control System"')      # an SE's own edit
+    base.write_text(edited)
+    got = command(files, "crew.baseline_admin", "undo")
+    assert got.returncode == 1 and "was edited after the last change these commands made (add system SYS-FC" in got.stdout
+    assert "add --force" in got.stdout and base.read_text() == edited
+    got = command(files, "crew.baseline_admin", "undo", "--force")
+    assert got.returncode == 0 and "An edit made since was discarded (--force)." in got.stdout and base.read_text() == original
+
+
+def test_ontology_changes_can_be_undone_and_not_from_under_the_baseline(files):
+    base, onto = files
+    original = onto.read_text()
+    states = [original]
+    for argv in (("add", "attribute", "Subsystem", "supplier"), ("add", "word", "software", "bootloader"),
+                 ("set", "attribute", "Subsystem", "j1939_source_address", "--max", "255"),
+                 ("remove", "attribute", "Subsystem", "tsn_profile")):
+        got = command(files, "crew.ontology_admin", *argv)
+        assert got.returncode == 0 and "To take this back: python -m crew.main ontology undo" in got.stdout
+        states.append(onto.read_text())
+    assert "attribute supplier added to Subsystem" in command(files, "crew.ontology_admin", "history").stdout
+    for step in (3, 2, 1):
+        assert command(files, "crew.ontology_admin", "undo").returncode == 0
+        assert onto.read_text() == states[step]
+    assert yaml.safe_load(onto.read_text())["metadata"]["version"] == "0.14"                    # the version went back with it
+
+    # a baseline entry now uses the attribute: taking the attribute back is refused until the entry is
+    assert command(files, "crew.baseline_admin", "add", "subsystem", "Winch", "--in", "SYS-PWR", "--safety-critical", "no",
+                   "--set", "supplier=Acme").returncode == 0
+    got = command(files, "crew.ontology_admin", "undo")
+    assert got.returncode == 1 and "undoing 'attribute supplier added to Subsystem' was refused" in got.stdout
+    assert "SUB-WINCH" in got.stdout and onto.read_text() == states[1]
+    assert command(files, "crew.baseline_admin", "undo").returncode == 0
+    assert command(files, "crew.ontology_admin", "undo").returncode == 0
+    assert onto.read_text() == original and base.read_text() == settings.baseline_yaml.read_text()
+    assert command(files, "crew.ontology_admin", "undo").returncode == 1
+
+
+def test_what_is_not_written_is_not_remembered(files):
+    base, onto = files
+    assert command(files, "crew.baseline_admin", "add", "system", "Armament", "--dry-run").returncode == 0
+    assert command(files, "crew.baseline_admin", "add", "subsystem", "Pump", "--in", "SYS-PWR").returncode == 1
+    assert command(files, "crew.ontology_admin", "add", "word", "software", "kernel", "--dry-run").returncode == 0
+    assert command(files, "crew.ontology_admin", "add", "attribute", "Subsystem", "x", "--required").returncode == 1
+    assert not (base.parent / ".history").exists()
+
+
+def test_the_history_keeps_the_last_hundred(tmp_path):
+    from esamkit import edit_history
+    path = tmp_path / "f.yaml"
+    path.write_text("v: 0\n")
+    for n in range(1, 106):
+        before, after = path.read_text(), f"v: {n}\n"
+        path.write_text(after)
+        assert edit_history.record(path, before, after, f"set v to {n}")
+    found = edit_history.entries(path)
+    assert len(found) == 100 and found[0]["change"] == "set v to 105" and found[-1]["change"] == "set v to 6"
+    assert edit_history.undo(path)["left"] == 99 and path.read_text() == "v: 104\n"
+    with pytest.raises(edit_history.HistoryError, match="would then have these problems.\n  bad"):
+        edit_history.undo(path, check=lambda text: ["bad"])
+    assert path.read_text() == "v: 104\n"
+
+
+def test_the_history_is_not_put_under_version_control():
+    assert ".history/" in (PROJECT_ROOT / ".gitignore").read_text().splitlines()

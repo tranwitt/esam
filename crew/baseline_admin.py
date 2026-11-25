@@ -11,6 +11,8 @@ Add to the vehicle baseline from the command line, without editing YAML.
     python -m crew.main baseline add family "Tracked Family" --in V-001
     python -m crew.main baseline add variant "Ambulance" --in FAM-001
     python -m crew.main baseline remove SYS-FC             # only an entry with nothing under it or attached to it
+    python -m crew.main baseline undo                      # take the last change back; again for the one before
+    python -m crew.main baseline history                   # the changes that can be undone
     (each takes --env <profile>; `python -m crew.baseline_admin ...` is the same thing)
 
   --in ID         the entry it goes in. Left out when there is only one possible.
@@ -43,7 +45,7 @@ _OPTIONS = {"safety_critical": "safety_critical", "alias": "aliases", "os": "os_
 
 
 def add_arguments(p: argparse.ArgumentParser) -> None:
-    sub = p.add_subparsers(dest="action", required=True, metavar="show | check | standard | add | remove")
+    sub = p.add_subparsers(dest="action", required=True, metavar="show | check | standard | add | remove | undo | history")
     sub.add_parser("show", help="the vehicle tree")
     sub.add_parser("check", help="the ontology check of the baseline")
     sub.add_parser("standard", help="the WBS numbers the standard fixes, as the ontology holds them")
@@ -67,7 +69,10 @@ def add_arguments(p: argparse.ArgumentParser) -> None:
     a.add_argument("--bare", action="store_true", help="vehicle: add it alone, without a family and a lead variant")
     r = sub.add_parser("remove", help="take out an entry with nothing under it and nothing attached to it")
     r.add_argument("id")
-    for x in (a, r):
+    u = sub.add_parser("undo", help="take the last add or remove back (again: the one before)")
+    u.add_argument("--force", action="store_true", help="restore the earlier file even if it was edited since")
+    sub.add_parser("history", help="the changes that can be undone, newest first")
+    for x in (a, r, u):
         x.add_argument("--dry-run", action="store_true", help="show what would change; write nothing")
         x.add_argument("--reload-graph", action="store_true", help="rebuild the graph from the baseline afterwards")
 
@@ -122,8 +127,26 @@ def run(args, s: Settings | None = None, graph=None) -> int:
               else f"The baseline passes the ontology check ({path}).")
         return 1 if errors else 0
 
+    if args.action == "history":
+        found = be.history(path)
+        print(f"Changes to {path} that can be undone, newest first:" if found else
+              f"No change made by these commands is remembered for {path}.")
+        for n, e in enumerate(found, 1):
+            print(f"  {n:>2}. {e['when']}  {e['change']}")
+        if found:
+            print("Undo the newest: python -m crew.main baseline undo")
+        return 0
+
     try:
-        if args.action == "remove":
+        if args.action == "undo":
+            res = be.undo(path, onto, force=args.force, dry_run=args.dry_run)
+            print(f"{'Would undo' if args.dry_run else 'Undone'}: {res['change']} (made {res['when']}). "
+                  + ("The file would be" if args.dry_run else "The file is") + " as it was before that change."
+                  + (" An edit made since was discarded (--force)." if res["edited_since"] and not args.dry_run else ""))
+            for line in res["problems"]:
+                print(f"  now fails the ontology check (--force): {line}")
+            print(f"{res['left']} more change(s) can be undone.")
+        elif args.action == "remove":
             res = be.remove(args.id, path, onto, dry_run=args.dry_run)
             print(f"{'Would remove' if args.dry_run else 'Removed'} {res['class']} {res['id']} ({res['name']}) "
                   f"from {res['parent'] or 'the baseline'}:\n\n{res['text']}\n")
@@ -152,6 +175,8 @@ def run(args, s: Settings | None = None, graph=None) -> int:
         print(f"Nothing was written (--dry-run): {path}")
         return 0
     print(f"Written to {path}")
+    if args.action != "undo" and res.get("undo"):
+        print("To take this back: python -m crew.main baseline undo")
     return _after(args, s, graph)
 
 
