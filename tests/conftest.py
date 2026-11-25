@@ -23,6 +23,25 @@ from esamkit.config import settings  # noqa: E402
 
 TEST_DB = "esam_test"
 
+# Where the test database is. Kept for every test: they say where Postgres runs,
+# not how ESAM behaves.
+KEEP_FOR_TESTS = {"ESAM_PG_DSN", "ESAM_TEST_PG_DSN"}
+
+
+@pytest.fixture(autouse=True)
+def no_esam_env(monkeypatch):
+    """Run each test as if no ESAM_* variable were set.
+
+    esamkit.config reads .env into os.environ, so a developer's .env (or a shell
+    export) would otherwise steer the code paths that read the environment at
+    call time, e.g. env.settings_for, the environment probe and the LLM routes,
+    and tests would pass or fail by machine. A test that needs a variable sets
+    it itself with monkeypatch.setenv. The module-level `settings` object was
+    built at import and is not affected.
+    """
+    for k in [k for k in os.environ if k.startswith("ESAM_") and k not in KEEP_FOR_TESTS]:
+        monkeypatch.delenv(k)
+
 
 def _test_dsn() -> str:
     if os.getenv("ESAM_TEST_PG_DSN"):

@@ -111,9 +111,6 @@ def test_default_model_folder_follows_the_model_name():
 # ── profiles ─────────────────────────────────────────────────────────────────
 
 def test_local_profile_takes_model_and_url_from_the_environment(monkeypatch):
-    import os
-    for v in [k for k in os.environ if k.startswith("ESAM_EMBED_")]:
-        monkeypatch.delenv(v)                                 # e.g. a .env copied from main sets the backend and folder
     prof = env.load_profile("local")
     s = env.settings_for(prof)
     assert s.embed_backend == "local" and s.embed_model_id == "BAAI/bge-base-en-v1.5"
