@@ -229,8 +229,15 @@ def _commit(path: Path, before: str, lines: list[str], expect, baseline_yaml: Pa
                                 + "\nChange the baseline first, or add --force to write the ontology and fix the baseline next.")
     if not dry_run:
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(after)
-        os.replace(tmp, path)
+        try:
+            tmp.write_text(after)
+            os.replace(tmp, path)
+        except OSError as e:
+            tmp.unlink(missing_ok=True)
+            raise OntologyEditError(f"NOT written: {path} could not be changed ({e.strerror or e}). Check that the file "
+                                    "and its folder can be written by this user") from e
+        if path.read_text() != after:                    # read back: never report a write that is not on disk
+            raise OntologyEditError(f"NOT written: {path} does not hold the change after writing it")
     return result
 
 

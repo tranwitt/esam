@@ -313,8 +313,8 @@ def test_remove_takes_out_only_what_nothing_depends_on(path):
         assert be.remove(eid, path, ONTO)["id"] == eid
         assert check_baseline(ONTO, yaml.safe_load(path.read_text())) == []
         load_baseline(path)
+    assert path.read_text() == before                              # everything added is out again, to the byte
     data = yaml.safe_load(path.read_text())
-    assert data["vehicles"] == [] and data["vehicle"] == yaml.safe_load(before)["vehicle"]
     assert be.add("vehicle", "Second again", path, ONTO, bare=True)["id"] == "V-002"     # and the empty list takes an entry again
     assert yaml.safe_load(path.read_text())["vehicles"][0]["name"] == "Second again"
 

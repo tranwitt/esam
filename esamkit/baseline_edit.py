@@ -75,6 +75,7 @@ KINDS = {"vehicle": "Vehicle", "family": "VehicleFamily", "variant": "Variant",
          "system": "System", "subsystem": "Subsystem", "function": "Function"}
 PARENT = {child: (parent, key) for parent, (key, child) in _CHILDREN.items()}     # class -> (parent class, list key)
 _NUMBERED = {"Vehicle": "V", "VehicleFamily": "FAM", "Variant": "VAR"}
+_VEHICLES_NOTE = "# Further ground vehicle systems, written like `vehicle:` above. Each has its own WBS, from 1.0."
 _NOT_SETTABLE = {"status", "derived_from"}           # written by the diagram reader, not by hand
 
 
@@ -337,7 +338,7 @@ def _insert(lines: list[str], entry: dict, parent: dict | None, data: dict) -> l
         else:
             start, _ = _locate(lines, data["vehicle"]["id"], data)
             at = _block_end(lines, start)
-            new = ["", "# Further ground vehicle systems, written like `vehicle:` above. Each has its own WBS, from 1.0.", "vehicles:"] + _entry(entry, 2)
+            new = ["", _VEHICLES_NOTE, "vehicles:"] + _entry(entry, 2)
         lines[at:at] = new
         return new
     key = PARENT[entry["class"]][1]
@@ -360,9 +361,19 @@ def _errors(onto: Ontology, data: dict) -> set[str]:
 
 
 def _write(path: Path, text: str) -> None:
+    """Replace the file's contents, and read them back: a write that did not
+    reach the disk (a read-only file or folder, a full disk) is an error,
+    never a silent success."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(text)
+        os.replace(tmp, path)
+    except OSError as e:
+        tmp.unlink(missing_ok=True)
+        raise BaselineEditError(f"NOT written: {path} could not be changed ({e.strerror or e}). Check that the file and "
+                                "its folder can be written by this user") from e
+    if path.read_text() != text:
+        raise BaselineEditError(f"NOT written: {path} does not hold the change after writing it")
 
 
 def _commit(path: Path, before: str, after: str, onto: Ontology, dry_run: bool, expect: list[tuple[str, str | None]],
@@ -512,7 +523,16 @@ def remove(eid: str, baseline_yaml: Path, onto: Ontology | None = None, dry_run:
         while i >= 0 and (not lines[i].strip() or lines[i].lstrip().startswith("#")):
             i -= 1
         if i >= 0 and re.fullmatch(rf"\s*{key}:\s*(#.*)?", lines[i]):
-            lines[i] = lines[i].split("#")[0].rstrip() + " []"
+            if n["class"] == "Vehicle":                  # no further vehicles left: the section this command wrote goes too
+                first = i
+                if first > 0 and lines[first - 1] == _VEHICLES_NOTE:
+                    first -= 1
+                    if first > 0 and not lines[first - 1].strip():
+                        first -= 1
+                taken_out = lines[first:i + 1] + taken_out
+                del lines[first:i + 1]
+            else:
+                lines[i] = lines[i].split("#")[0].rstrip() + " []"
     _commit(path, before, "\n".join(lines), onto, dry_run, [], gone=eid)
     return {"id": eid, "class": n["class"], "name": n["name"], "parent": n["parent"], "text": "\n".join(taken_out),
             "baseline": str(path), "written": not dry_run}
