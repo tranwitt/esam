@@ -216,6 +216,68 @@ with `apply` they are added on ingest as `status: candidate` entries. Off by def
 What a Word document must contain to be recognised is the same as for markdown: a title
 `<ID> — <name>` (Title or Heading 1 style) and the `Document | Type | Revision | Subsystem` table.
 
+## Changing the baseline and the ontology from the command line
+
+Two commands edit ESAM's two source files for you. They change the YAML file **on disk**, straight away; there
+is no separate save step, and no agent or model is involved.
+
+| Command | The file it edits | Variable that points it elsewhere |
+|---|---|---|
+| `python -m crew.main baseline …` | `data/baseline/vehicle_decomposition.yaml` | `ESAM_BASELINE_YAML` |
+| `python -m crew.main ontology …` | `data/ontology/esam_ontology.yaml` | `ESAM_ONTOLOGY_YAML` |
+
+```bash
+# the vehicle baseline: vehicles, families, variants, systems, subsystems, functions
+python -m crew.main baseline show
+python -m crew.main baseline add system "Fire Control"
+python -m crew.main baseline add subsystem "Turret Drive Controller (TDC)" --in SYS-FC --safety-critical yes
+python -m crew.main baseline add function "Turret slew control" --in SUB-TDC
+python -m crew.main baseline remove FN-TDC-TSC
+
+# the ontology: values, attributes, document types, required-document rules, word lists
+python -m crew.main ontology show
+python -m crew.main ontology add value os_class hypervisor "Separation kernel hosting several partitions"
+python -m crew.main ontology add attribute Subsystem supplier --description "Who builds it"
+python -m crew.main ontology set attribute Subsystem j1939_source_address --max 255
+python -m crew.main ontology remove value os_class hypervisor
+```
+
+**How to tell that the file was changed.** Every command ends by saying what happened to the file, with its
+full path:
+
+| The last lines say | What happened |
+|---|---|
+| `Added …` / `Changed: …` / `Removed …`, the lines written, then `Written to <path>` | The file was changed. The lines shown are the ones now in it. |
+| `Would add …` / `Would change: …`, then `Nothing was written (--dry-run): <path>` | You asked for a preview with `--dry-run`. The file is untouched. |
+| `NOT CHANGED: <reason>` | The change was refused, or the file could not be written. The file is untouched, and the command exits with an error. |
+
+To see it for yourself: `git diff data/` shows exactly the lines added or removed (nothing else in the file
+moves, and every comment stays), and `baseline show` / `ontology show` read the file again.
+
+**If the file you are looking at did not change**, check these in order:
+
+1. The path on the `Written to` line. If `ESAM_BASELINE_YAML` or `ESAM_ONTOLOGY_YAML` is set (in `.env` or the
+   shell), the command edits that file, not the one under `data/`.
+2. `--dry-run` was not on the command.
+3. The output does not start with `NOT CHANGED`. A change is refused when the result would not be valid, would
+   break a rule (a WBS code against MIL-STD-881F, an id already used, a value the ontology does not allow), or
+   would make the baseline fail the ontology check; the reason and what to give instead follow on the same line.
+
+**What these commands do not change.** The graph and the search store are built *from* these files and stay as
+they were until rebuilt:
+
+```bash
+python -m crew.main graph reload         # after a change to the baseline (or add --reload-graph to `baseline add`)
+python -m crew.main graph status         # says whether the graph is behind the baseline
+```
+
+The Cockpit and the agents read the graph, so a new system appears there after the reload, not before. The
+checks (`baseline check`, `ontology check`) read the files directly and see a change at once.
+
+Every option, what is worked out for you (ids, WBS codes by MIL-STD-881F Appendix G), and what cannot be changed
+from the command line: `crew/README.md`, "The vehicle baseline" and "The ontology". Without CrewAI installed,
+`python -m crew.baseline_admin …` and `python -m crew.ontology_admin …` are the same commands.
+
 ## Model endpoints: Responses API and fallbacks
 
 The chat model (`esamkit/llm.py`) speaks Chat Completions (`ESAM_REASONING_API=chat`, default), the Responses
